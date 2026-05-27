@@ -1,0 +1,3186 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bhartia Enterprises — Daily Operations</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gold:#C8910A;--gold-light:#FFF8E1;
+  --blue:#1565C0;--blue-light:#E3F2FD;
+  --green:#1B5E20;--green-light:#E8F5E9;
+  --red:#C62828;--red-light:#FFEBEE;
+  --orange:#E65100;--orange-light:#FFF3E0;
+  --purple:#4A148C;--purple-light:#F3E5F5;
+  --teal:#00695C;--teal-light:#E0F2F1;
+  --grey:#37474F;--grey-light:#ECEFF1;
+  --dark:#1A1A1A;--mid:#444;--light:#777;--border:#DDD;--bg:#F0EDE8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-height:100vh;padding-bottom:70px}
+.hi{font-family:'Noto Sans Devanagari','Inter',sans-serif}
+
+/* ── TOPBAR ── */
+.topbar{background:var(--dark);color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
+.logo{font-size:15px;font-weight:700}.logo span{color:var(--gold)}
+.logo-sub{font-size:9px;color:#aaa;margin-top:1px}
+.lang-toggle{display:flex;background:#333;border-radius:6px;padding:2px;gap:2px}
+.lang-btn{padding:4px 9px;border-radius:4px;border:none;background:transparent;font-size:11px;font-weight:600;cursor:pointer;color:#888;transition:all .15s}
+.lang-btn.active{background:var(--gold);color:#1a1a1a}
+
+/* ── BOTTOM NAV ── */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #ddd;display:flex;z-index:200;box-shadow:0 -2px 8px rgba(0,0,0,.1)}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 4px 10px;border:none;background:transparent;cursor:pointer;color:#aaa;font-size:10px;font-weight:600;gap:3px;transition:all .15s;font-family:inherit}
+.nav-btn.active{color:var(--gold)}
+.nav-btn .nav-icon{font-size:20px;line-height:1}
+
+/* ── TAB PAGES ── */
+.tab-page{display:none;max-width:600px;margin:0 auto;padding:14px}
+.tab-page.active{display:block}
+
+/* ── CARDS & SECTIONS ── */
+.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px}
+.card-title{font-size:12px;font-weight:700;color:var(--light);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px}
+.sec-hdr{padding:9px 14px;border-radius:8px 8px 0 0;font-size:11.5px;font-weight:700;color:#fff;margin-top:14px;first:margin-top:0}
+.sec-hdr.blue{background:var(--blue)}.sec-hdr.grey{background:var(--grey)}
+.sec-hdr.green{background:var(--green)}.sec-hdr.orange{background:var(--orange)}
+.sec-hdr.purple{background:var(--purple)}.sec-hdr.teal{background:var(--teal)}
+.sec-hdr.red{background:var(--red)}.sec-hdr.gold{background:var(--gold);color:#1a1a1a}
+.sec-body{background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;overflow:hidden}
+.spacer{height:14px}
+
+/* ── SELECTORS ── */
+.sel-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.sel-card{border:2px solid var(--border);border-radius:10px;padding:14px 10px;cursor:pointer;text-align:center;transition:all .15s;background:#fff}
+.sel-card:hover{border-color:var(--gold)}
+.sel-card.selected{border-color:var(--gold);background:var(--gold-light)}
+.sel-card .ico{font-size:26px;margin-bottom:5px}
+.sel-card .ttl{font-size:12px;font-weight:700}
+.sel-card .sub{font-size:10px;color:var(--light);margin-top:2px}
+
+/* ── FIELDS ── */
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:10px;font-weight:700;color:var(--light);text-transform:uppercase;letter-spacing:.4px}
+.field input,.field select,.field textarea{padding:8px 11px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;color:var(--dark);background:#fff;outline:none;font-family:inherit;width:100%;transition:border .15s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--gold)}
+.field textarea{resize:vertical;min-height:60px}
+
+/* ── CHECKLIST ROWS ── */
+.chk-item{display:flex;align-items:flex-start;gap:10px;padding:10px 13px;border-bottom:1px solid #f5f4f0;cursor:pointer;user-select:none;transition:background .1s}
+.chk-item:last-child{border-bottom:none}
+.chk-item.checked{background:#f0faf2}
+.chk-box{width:21px;height:21px;border-radius:5px;border:2px solid #ccc;background:#fff;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.chk-box.on{background:var(--green);border-color:var(--green)}
+.chk-box.on::after{content:'';width:10px;height:6px;border-left:2.5px solid #fff;border-bottom:2.5px solid #fff;transform:rotate(-45deg) translateY(-1px);display:block}
+.chk-label{font-size:12.5px;flex:1;line-height:1.4}
+.time-inp{width:80px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;text-align:center;flex-shrink:0}
+.multi-row{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid #f5f4f0;flex-wrap:wrap}
+.multi-row:last-child{border-bottom:none}
+.multi-lbl{font-size:12.5px;font-weight:600;min-width:100px}
+.multi-opts{display:flex;gap:8px;flex-wrap:wrap}
+.multi-opt{display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px}
+.multi-opt input[type=checkbox]{width:16px;height:16px;accent-color:var(--green);cursor:pointer}
+
+/* ── DIGITAL ── */
+.dig-note{background:var(--teal-light);color:var(--teal);font-size:11px;padding:9px 13px;border-bottom:1px solid #b2dfdb;line-height:1.5}
+.dig-row{padding:11px 13px;border-bottom:1px solid #f0f0f0}
+.dig-row:last-child{border-bottom:none}
+.dig-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.dig-badge{border-radius:5px;color:#fff;font-family:Arial,sans-serif;font-size:10.5px;font-weight:700;padding:4px 8px;min-width:76px;text-align:center;flex-shrink:0}
+.dig-cbs{display:flex;flex-wrap:wrap;gap:7px}
+.dig-meta{display:flex;gap:8px;flex-wrap:wrap;padding-top:7px;border-top:1px dashed #eee}
+.dig-meta-item{display:flex;align-items:center;gap:5px;flex:1;min-width:100px}
+.dig-meta-lbl{font-size:10px;font-weight:600;color:var(--light);white-space:nowrap}
+.dig-time{padding:5px 7px;border:1px solid #ddd;border-radius:6px;font-size:12px;width:88px}
+.dig-topic{flex:1;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;font-family:inherit;outline:none}
+.dig-topic:focus,.dig-time:focus{border-color:var(--teal);outline:none}
+.dig-contacts{padding:10px 13px;border-top:1px solid #f0f0f0;display:flex;gap:14px;flex-wrap:wrap;align-items:center;background:#fafffe}
+.dig-cnt-item{display:flex;align-items:center;gap:6px}
+.dig-num{width:65px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-weight:700;text-align:center}
+.dig-note-area{padding:10px 13px;border-top:1px solid #f0f0f0}
+.dig-textarea{width:100%;padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;resize:vertical;min-height:55px;font-family:inherit;outline:none}
+.dig-textarea:focus{border-color:var(--teal)}
+
+/* ── REPAIRS ── */
+.repairs-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border)}
+.rep-cell{background:#fff;padding:10px 11px}
+.rep-cat{font-size:11.5px;font-weight:700;margin-bottom:6px}
+.rep-opts{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rep-opts input[type=checkbox]{width:16px;height:16px;accent-color:var(--green);cursor:pointer}
+.rep-opts input[type=date]{border:1px solid #ddd;border-radius:6px;padding:3px 5px;font-size:11px}
+
+/* ── FIGURES / METRICS ── */
+.kv-wrap{padding:10px}
+.kv-sub{padding:4px 10px;border-radius:4px;font-size:10px;font-weight:700;color:#fff;margin-bottom:6px;margin-top:8px}
+.kv-sub:first-child{margin-top:0}
+.kv-sub.blue{background:var(--blue)}.kv-sub.orange{background:var(--orange)}
+.kv-sub.green{background:var(--green)}.kv-sub.purple{background:var(--purple)}
+.kv-grid{display:grid;gap:7px;margin-bottom:4px}
+.kv-grid.g4{grid-template-columns:repeat(4,1fr)}
+.kv-grid.g3{grid-template-columns:repeat(3,1fr)}
+.kv-tile{border:0.5px solid #ccc;border-radius:7px;overflow:hidden;background:#f8f8f6}
+.kv-tile label{display:block;font-size:9px;font-weight:700;color:var(--mid);padding:5px 7px;background:#eee;border-bottom:1px solid #ddd;line-height:1.3;min-height:28px;display:flex;align-items:center;justify-content:center;text-align:center}
+.kv-tile input{width:100%;padding:7px 6px;border:none;font-size:16px;font-weight:700;text-align:center;background:transparent;color:var(--dark);outline:none;font-family:inherit}
+
+/* ── PRIORITY ── */
+.pri-item{padding:10px 13px;border-bottom:1px solid #f5f4f0}
+.pri-item:last-child{border-bottom:none}
+.pri-badge{display:inline-block;border-radius:4px;padding:3px 9px;font-size:11px;font-weight:700;color:#fff;margin-bottom:6px}
+.pri-badge.p1{background:var(--red)}.pri-badge.p2{background:var(--orange)}.pri-badge.p3{background:var(--green)}
+.pri-task{width:100%;padding:7px 10px;border:1.5px solid #ddd;border-radius:7px;font-size:12px;margin-bottom:6px;font-family:inherit;outline:none}
+.pri-task:focus{border-color:var(--gold)}
+.pri-assign{display:flex;align-items:center;gap:7px}
+.pri-assign label{font-size:11px;color:var(--light);white-space:nowrap}
+.pri-assign input{flex:1;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;font-family:inherit;outline:none}
+
+/* ── NOTES ── */
+.notes-wrap{padding:10px 13px}
+.notes-wrap label{font-size:10px;font-weight:700;color:var(--light);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px}
+.notes-wrap textarea{width:100%;padding:9px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;resize:vertical;min-height:62px;font-family:inherit;outline:none}
+.notes-wrap textarea:focus{border-color:var(--gold)}
+
+/* ── ASSIGNMENT TABLE ── */
+.asgn-hdr{display:grid;grid-template-columns:90px 1fr 70px;background:var(--grey);padding:7px 12px;gap:8px}
+.asgn-hdr span{font-size:10px;font-weight:700;color:#fff}
+.asgn-row{display:grid;grid-template-columns:90px 1fr 70px;padding:8px 12px;gap:8px;align-items:center;border-bottom:1px solid #f0f0f0;min-height:42px}
+.asgn-row:last-child{border-bottom:none}
+.asgn-row:nth-child(even){background:#f8f8f6}
+.asgn-name{font-size:12px;font-weight:700}
+.asgn-row input[type=text]{width:100%;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:11px;font-family:inherit;outline:none}
+.asgn-row select{width:100%;padding:5px 5px;border:1px solid #ddd;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;outline:none}
+
+/* ── ATTENDANCE TAB ── */
+.att-store-bar{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.att-store-bar label{font-size:11px;font-weight:700;color:var(--light)}
+.att-store-bar select,.att-store-bar input{padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;background:#fff}
+.att-store-bar select:focus,.att-store-bar input:focus{border-color:var(--gold)}
+.att-table-wrap{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:12px}
+.att-hdr{background:var(--grey);display:grid;padding:8px 10px;gap:4px}
+.att-hdr span{font-size:9.5px;font-weight:700;color:#fff;text-align:center}
+.att-row{border-bottom:1px solid #f0ede8;padding:10px}
+.att-row:last-child{border-bottom:none}
+.att-row:nth-child(even){background:#fafaf8}
+.att-staff-name{font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+.att-status-pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.att-status-pill{padding:4px 10px;border-radius:20px;border:1.5px solid #ddd;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;background:#fff;font-family:inherit}
+.att-status-pill.present{border-color:var(--green);background:var(--green-light);color:var(--green)}
+.att-status-pill.absent{border-color:var(--red);background:var(--red-light);color:var(--red)}
+.att-status-pill.late{border-color:var(--orange);background:var(--orange-light);color:var(--orange)}
+.att-status-pill.halfday{border-color:var(--purple);background:var(--purple-light);color:var(--purple)}
+.att-times{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-bottom:6px}
+.att-time-field{display:flex;flex-direction:column;gap:3px}
+.att-time-field label{font-size:9.5px;font-weight:700;color:var(--light);text-transform:uppercase;letter-spacing:.3px}
+.att-time-field input{padding:6px 9px;border:1.5px solid #ddd;border-radius:7px;font-size:13px;font-weight:600;font-family:inherit;outline:none;width:100%}
+.att-time-field input:focus{border-color:var(--gold)}
+.att-time-field.lunch label{color:var(--orange)}
+.att-time-field.lunch input:focus{border-color:var(--orange)}
+.att-remark{width:100%;padding:6px 9px;border:1.5px solid #ddd;border-radius:7px;font-size:12px;font-family:inherit;outline:none}
+.att-remark:focus{border-color:var(--gold)}
+.att-summary-bar{background:var(--green-light);border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap}
+.att-sum-item{font-size:12px;font-weight:600}
+.att-sum-item span{color:var(--green)}
+
+/* ── STEPS (checklist wizard) ── */
+.steps{display:flex;background:#fff;border-bottom:1px solid var(--border);padding:10px 14px;gap:0;overflow-x:auto;scrollbar-width:none;position:sticky;top:48px;z-index:100}
+.steps::-webkit-scrollbar{display:none}
+.step{display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;font-size:10.5px;font-weight:600;color:#aaa;white-space:nowrap;cursor:pointer;transition:all .15s}
+.step.active{background:var(--dark);color:#fff}
+.step.done{background:var(--green-light);color:var(--green)}
+.step-n{width:17px;height:17px;border-radius:50%;background:currentColor;opacity:.3;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff}
+.step.active .step-n,.step.done .step-n{opacity:1}
+.step-arr{color:#ccc;font-size:10px;padding:0 2px}
+.cl-section{display:none}.cl-section.active{display:block}
+
+/* ── PROGRESS BAR ── */
+.prog-wrap{background:#fff;border:1px solid var(--border);border-radius:10px;padding:11px 13px;margin-bottom:12px}
+.prog-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+.prog-title{font-size:11.5px;font-weight:600}
+.prog-pct{font-size:18px;font-weight:800;color:var(--green)}
+.prog-bg{height:7px;background:#eee;border-radius:4px;overflow:hidden}
+.prog-fill{height:100%;background:var(--green);border-radius:4px;transition:width .4s}
+
+/* ── REPORTS TAB ── */
+.pin-screen{text-align:center;padding:40px 20px}
+.pin-icon{font-size:52px;margin-bottom:14px}
+.pin-title{font-size:18px;font-weight:700;margin-bottom:6px}
+.pin-sub{font-size:13px;color:var(--mid);margin-bottom:20px}
+.pin-input{width:160px;padding:12px;text-align:center;font-size:24px;font-weight:700;border:2px solid #ddd;border-radius:10px;letter-spacing:6px;font-family:inherit;outline:none;margin-bottom:12px;display:block;margin-left:auto;margin-right:auto}
+.pin-input:focus{border-color:var(--gold)}
+.pin-error{color:var(--red);font-size:12px;margin-top:6px;min-height:18px}
+.reports-screen{display:none}
+.rep-filter-bar{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.rep-filter-bar .field{flex:1;min-width:110px}
+.rep-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+.rep-stat{background:#fff;border:1px solid var(--border);border-radius:10px;padding:11px 13px}
+.rep-stat-lbl{font-size:10px;font-weight:700;color:var(--light);margin-bottom:3px}
+.rep-stat-val{font-size:20px;font-weight:800;color:var(--dark)}
+.rep-stat-val.g{color:var(--green)}.rep-stat-val.b{color:var(--blue)}.rep-stat-val.o{color:var(--orange)}
+.rep-list{display:flex;flex-direction:column;gap:8px}
+.rep-card{background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s}
+.rep-card:hover{box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.rep-card-hdr{padding:11px 13px;display:flex;justify-content:space-between;align-items:center}
+.rep-card-left{}
+.rep-card-title{font-size:13px;font-weight:700}
+.rep-card-sub{font-size:11px;color:var(--mid);margin-top:2px}
+.rep-card-right{text-align:right}
+.rep-type-badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;display:inline-block;margin-bottom:3px}
+.rep-type-badge.opening{background:var(--blue-light);color:var(--blue)}
+.rep-type-badge.closing{background:var(--purple-light);color:var(--purple)}
+.rep-type-badge.attendance{background:var(--green-light);color:var(--green)}
+.rep-pct{font-size:17px;font-weight:800;color:var(--green)}
+.rep-detail{display:none;border-top:1px solid #f0ede8;padding:12px 13px;background:#fafaf8}
+.rep-detail.open{display:block}
+.rep-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.rep-detail-row{font-size:12px;display:flex;flex-direction:column;gap:1px}
+.rep-detail-lbl{font-size:10px;color:var(--light);font-weight:600}
+.rep-detail-val{font-size:12px;font-weight:600}
+.rep-att-grid{margin-top:8px}
+.rep-att-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0ede8;font-size:12px}
+.rep-att-row:last-child{border-bottom:none}
+.empty-state{text-align:center;padding:40px 20px;color:var(--light);font-size:13px}
+.empty-icon{font-size:42px;margin-bottom:10px}
+.loading-spinner{text-align:center;padding:30px;color:var(--light);font-size:13px}
+
+/* ── BUTTONS ── */
+.btn-row{display:flex;gap:10px;margin:14px 0}
+.btn{padding:11px 18px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:var(--dark);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;flex:1}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--dark);color:#fff;border-color:var(--dark)}
+.btn.gold{background:var(--gold);color:#1a1a1a;border-color:var(--gold)}
+.btn.green{background:var(--green);color:#fff;border-color:var(--green)}
+.btn.red{background:var(--red);color:#fff;border-color:var(--red)}
+
+/* ── SUCCESS ── */
+.success-wrap{text-align:center;padding:40px 20px;display:none}
+.success-icon{font-size:60px;margin-bottom:14px}
+.success-title{font-size:20px;font-weight:800;color:var(--green);margin-bottom:8px}
+.success-sub{font-size:13px;color:var(--mid);line-height:1.6;margin-bottom:20px}
+.sum-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;text-align:left;margin-bottom:14px}
+.sum-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f5f4f0;font-size:12.5px}
+.sum-row:last-child{border-bottom:none}
+.sum-key{color:var(--mid)}.sum-val{font-weight:700}
+
+/* ── LOADING ── */
+.loading-wrap{display:none;text-align:center;padding:40px 20px}
+.spinner{width:38px;height:38px;border:4px solid #eee;border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:8px;font-size:12.5px;font-weight:500;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap}
+.toast.show{opacity:1}
+
+@media(max-width:380px){
+  .kv-grid.g4{grid-template-columns:repeat(2,1fr)}
+  .kv-grid.g3{grid-template-columns:repeat(2,1fr)}
+  .att-times{grid-template-columns:1fr 1fr}
+  .asgn-hdr,.asgn-row{grid-template-columns:80px 1fr 60px}
+}
+
+/* ── TASKS TAB ── */
+.task-role-bar{background:#fff;border-bottom:1px solid var(--border);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:48px;z-index:99}
+.task-role-left{display:flex;gap:8px}
+.task-role-btn{display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:20px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:600;cursor:pointer;color:var(--mid);transition:all .15s;font-family:inherit}
+.task-role-btn.active{background:var(--dark);color:#fff;border-color:var(--dark)}
+.task-count-badge{background:var(--red);color:#fff;border-radius:20px;font-size:10px;font-weight:700;padding:1px 6px;min-width:18px;text-align:center}
+.task-role-btn.active .task-count-badge{background:var(--gold);color:#1a1a1a}
+.task-add-fab{background:var(--gold);color:#1a1a1a;border:none;border-radius:20px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(200,145,10,.3)}
+
+.task-stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.task-stat{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 8px;text-align:center}
+.task-stat.red{border-color:var(--red);background:var(--red-light)}
+.task-stat.green{border-color:var(--green);background:var(--green-light)}
+.task-stat.amber{border-color:var(--orange);background:var(--orange-light)}
+.task-stat-num{font-size:22px;font-weight:800;color:var(--dark)}
+.task-stat.red .task-stat-num{color:var(--red)}
+.task-stat.green .task-stat-num{color:var(--green)}
+.task-stat.amber .task-stat-num{color:var(--orange)}
+.task-stat-lbl{font-size:9px;font-weight:700;color:var(--light);margin-top:2px}
+
+.task-filter-row{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.task-filter-row::-webkit-scrollbar{display:none}
+.task-filter-btn{padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--mid);white-space:nowrap;font-family:inherit;transition:all .15s}
+.task-filter-btn.active{background:var(--dark);color:#fff;border-color:var(--dark)}
+
+.task-who-row{display:flex;align-items:center;gap:8px;margin-bottom:12px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.task-who-lbl{font-size:12px;font-weight:700;white-space:nowrap;color:var(--mid)}
+
+.task-group-hdr{font-size:11px;font-weight:700;color:var(--light);text-transform:uppercase;letter-spacing:.4px;padding:6px 2px;margin-top:4px}
+
+.task-card{background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;transition:box-shadow .15s}
+.task-card:hover{box-shadow:0 2px 10px rgba(0,0,0,.07)}
+.task-card.done-card{opacity:.65;background:#f9f9f9}
+.task-card.urgent-card{border-left:4px solid var(--red)}
+.task-card.normal-card{border-left:4px solid var(--gold)}
+.task-card.low-card{border-left:4px solid var(--green)}
+.task-card.carried-card{border-left:4px solid var(--purple)}
+
+.task-card-top{display:flex;align-items:flex-start;padding:11px 13px;gap:10px}
+.task-cb{width:22px;height:22px;border-radius:6px;border:2px solid #ccc;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;margin-top:1px}
+.task-cb.done{background:var(--green);border-color:var(--green)}
+.task-cb.done::after{content:'';width:11px;height:6px;border-left:2.5px solid #fff;border-bottom:2.5px solid #fff;transform:rotate(-45deg) translateY(-1px);display:block}
+.task-card-body{flex:1;min-width:0}
+.task-desc{font-size:13px;font-weight:600;line-height:1.4;margin-bottom:5px}
+.task-desc.done-text{text-decoration:line-through;color:var(--light)}
+.task-meta{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.task-badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap}
+.badge-urgent{background:var(--red-light);color:var(--red)}
+.badge-normal{background:var(--gold-light);color:#856404}
+.badge-low{background:var(--green-light);color:var(--green)}
+.badge-store{background:var(--blue-light);color:var(--blue)}
+.badge-assign{background:var(--grey-light);color:var(--grey)}
+.badge-due{background:#FFF3E0;color:var(--orange)}
+.badge-carried{background:var(--purple-light);color:var(--purple)}
+.badge-source{background:#f5f4f0;color:var(--light);font-style:italic;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-card-actions{display:flex;border-top:1px solid #f5f4f0;overflow:hidden}
+.task-action-btn{flex:1;padding:8px;border:none;background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--mid);font-family:inherit;transition:background .15s;border-right:1px solid #f5f4f0}
+.task-action-btn:last-child{border-right:none}
+.task-action-btn:hover{background:#f5f4f0}
+.task-action-btn.red-btn{color:var(--red)}
+
+.task-from-strip{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--light);background:#f9f8f5;padding:5px 13px;border-top:1px solid #f5f4f0}
+
+.task-inline-add{margin:4px 0 0;padding:8px 13px;background:var(--gold-light);border-top:1px solid #f5f4f0;display:none}
+.task-inline-add.open{display:block}
+.task-inline-btn{background:none;border:1px dashed var(--gold);border-radius:6px;padding:5px 10px;font-size:11px;color:var(--gold);cursor:pointer;font-weight:600;font-family:inherit;width:100%;text-align:left}
+.task-inline-btn:hover{background:var(--gold-light)}
+
+/* OWNER VIEW */
+.owner-store-tabs{display:flex;gap:6px;margin-bottom:10px}
+.owner-store-tab{flex:1;padding:9px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+.owner-store-tab.active{background:var(--dark);color:#fff;border-color:var(--dark)}
+.owner-mgr-filter{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.owner-task-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.owner-assignee-hdr{display:flex;align-items:center;justify-content:space-between;background:var(--dark);color:#fff;border-radius:8px 8px 0 0;padding:9px 13px;margin-top:10px}
+.owner-assignee-name{font-size:13px;font-weight:700}
+.owner-assignee-counts{display:flex;gap:8px;font-size:11px}
+.owner-assignee-count{padding:2px 8px;border-radius:20px;font-weight:700}
+.owner-assignee-count.pending{background:var(--red);color:#fff}
+.owner-assignee-count.done{background:var(--green);color:#fff}
+.owner-assignee-group{border:1px solid #e0ddd8;border-top:none;border-radius:0 0 8px 8px;overflow:hidden;margin-bottom:4px}
+
+.empty-tasks{text-align:center;padding:40px 20px;color:var(--light)}
+.empty-tasks-icon{font-size:48px;margin-bottom:10px}
+
+/* MODAL */
+.task-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:none;align-items:flex-end;justify-content:center;padding:0}
+.task-modal-overlay.open{display:flex}
+.task-modal-box{background:#fff;border-radius:16px 16px 0 0;padding:20px 16px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;animation:slideUp .2s ease}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.task-modal-title{font-size:16px;font-weight:800;margin-bottom:12px;color:var(--dark)}
+.task-modal-from{font-size:11px;color:var(--teal);background:var(--teal-light);padding:6px 10px;border-radius:6px;margin-bottom:12px;display:none}
+.task-modal-from.show{display:block}
+
+/* ── STAFF PRESENT + MULTI-TASK + TRAINING + WA GROUP ── */
+.present-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 13px}
+.present-card{border:1.5px solid var(--border);border-radius:9px;padding:9px 8px;text-align:center;cursor:pointer;background:#fff;transition:all .15s;user-select:none}
+.present-card.selected{border-color:var(--green);background:var(--green-light)}
+.present-name{font-size:12px;font-weight:700}
+.present-status{font-size:10px;color:var(--light);margin-top:2px}
+.present-card.selected .present-status{color:var(--green)}
+
+.multi-task-wrap{background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:10px}
+.multi-task-staff-hdr{background:var(--grey);color:#fff;padding:8px 13px;display:flex;align-items:center;justify-content:space-between}
+.multi-task-staff-name{font-size:13px;font-weight:700}
+.multi-task-add-btn{background:var(--gold);color:#1a1a1a;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
+.multi-task-item{display:flex;align-items:center;gap:8px;padding:8px 13px;border-bottom:1px solid #f5f4f0}
+.multi-task-item:last-child{border-bottom:none}
+.multi-task-num{font-size:10px;font-weight:700;color:var(--light);min-width:16px}
+.multi-task-inp{flex:1;padding:6px 9px;border:1.5px solid #ddd;border-radius:7px;font-size:12px;font-family:inherit;outline:none}
+.multi-task-inp:focus{border-color:var(--gold)}
+.multi-task-pri{padding:5px 6px;border:1px solid #ddd;border-radius:6px;font-size:11px;font-family:inherit;background:#fff;outline:none}
+.multi-task-del{background:none;border:none;color:#ccc;font-size:16px;cursor:pointer;padding:0 4px;flex-shrink:0}
+.multi-task-del:hover{color:var(--red)}
+.multi-task-cb{width:18px;height:18px;border-radius:4px;border:2px solid #ccc;background:#fff;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.multi-task-cb.on{background:var(--green);border-color:var(--green)}
+.multi-task-cb.on::after{content:'';width:9px;height:5px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translateY(-1px);display:block}
+
+.training-row{display:grid;grid-template-columns:1fr 80px 1fr;gap:8px;padding:10px 13px;border-bottom:1px solid #f5f4f0;align-items:center}
+.training-row:last-child{border-bottom:none}
+.training-staff{font-size:12px;font-weight:700}
+.training-inp{padding:6px 9px;border:1.5px solid #ddd;border-radius:7px;font-size:12px;font-family:inherit;outline:none;width:100%}
+.training-inp:focus{border-color:var(--teal)}
+.training-mins{padding:6px 9px;border:1.5px solid #ddd;border-radius:7px;font-size:12px;font-family:inherit;outline:none;width:100%;text-align:center}
+
+.wa-group-row{display:grid;grid-template-columns:1fr 60px 80px 80px;gap:7px;padding:9px 13px;border-bottom:1px solid #f5f4f0;align-items:center}
+.wa-group-row:last-child{border-bottom:none}
+.wa-group-row input{padding:6px 8px;border:1.5px solid #ddd;border-radius:7px;font-size:11px;font-family:inherit;outline:none;width:100%}
+.wa-group-row input:focus{border-color:var(--green)}
+.wa-add-btn{background:none;border:1.5px dashed var(--green);border-radius:7px;padding:6px 10px;font-size:11px;color:var(--green);cursor:pointer;font-weight:700;font-family:inherit;text-align:center;margin:8px 13px}
+
+.eod-summary-wrap{padding:10px 13px}
+.eod-cat-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f4f0;font-size:13px}
+.eod-cat-row:last-child{border-bottom:none}
+.eod-cat-name{font-weight:600;flex:1}
+.eod-badges{display:flex;gap:6px}
+.eod-done-badge{background:var(--green-light);color:var(--green);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700}
+.eod-pend-badge{background:var(--red-light);color:var(--red);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700}
+.eod-carry-note{background:var(--gold-light);border:1px solid var(--gold);border-radius:8px;padding:10px 13px;font-size:12px;margin-top:10px;line-height:1.6}
+
+.imp-work-area{width:100%;padding:9px 11px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;resize:vertical;min-height:65px;font-family:inherit;outline:none}
+.imp-work-area:focus{border-color:var(--gold)}
+
+/* KEY VITALS in Reports */
+.rep-vitals-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px}
+.rep-vital-tile{background:#f8f8f6;border:1px solid #eee;border-radius:7px;padding:7px 10px}
+.rep-vital-lbl{font-size:9px;font-weight:700;color:var(--light);margin-bottom:2px}
+.rep-vital-val{font-size:16px;font-weight:800;color:var(--dark)}
+
+/* ── LEAVE APPLICATION + INTERCHANGE ── */
+.staff-count-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 13px;background:#f8f8f6;border-bottom:1px solid #f0ede8}
+.staff-count-box{text-align:center;background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 6px}
+.staff-count-num{font-size:20px;font-weight:800}
+.staff-count-num.green{color:var(--green)}
+.staff-count-num.orange{color:var(--orange)}
+.staff-count-num.red{color:var(--red)}
+.staff-count-num.blue{color:var(--blue)}
+.staff-count-lbl{font-size:9px;font-weight:700;color:var(--light);margin-top:2px}
+
+.leave-card{border:1px solid var(--border);border-radius:10px;background:#fff;margin:8px 13px;overflow:hidden}
+.leave-card-hdr{background:#37474F;padding:8px 13px;display:flex;justify-content:space-between;align-items:center}
+.leave-card-name{font-size:13px;font-weight:700;color:#fff}
+.leave-badge{font-size:10px;padding:2px 10px;border-radius:20px;font-weight:700;border:none;cursor:pointer;font-family:inherit}
+.leave-badge.granted{background:var(--green);color:#fff}
+.leave-badge.denied{background:var(--red);color:#fff}
+.leave-badge.pending{background:#FFF8E1;color:#856404;border:1px solid var(--gold)}
+.leave-card-body{padding:10px 13px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.leave-field{display:flex;flex-direction:column;gap:3px}
+.leave-field label{font-size:9.5px;font-weight:700;color:var(--light);text-transform:uppercase;letter-spacing:.3px}
+.leave-field input,.leave-field select,.leave-field textarea{padding:7px 9px;border:1.5px solid #ddd;border-radius:7px;font-size:12px;font-family:inherit;outline:none;width:100%;background:#fff}
+.leave-field input:focus,.leave-field select:focus,.leave-field textarea:focus{border-color:var(--gold)}
+.leave-field textarea{resize:none;min-height:50px}
+.leave-grant-row{grid-column:1/-1;display:flex;gap:8px;align-items:center}
+.grant-btn{flex:1;padding:8px;border-radius:8px;border:1.5px solid;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+.grant-btn.yes{border-color:var(--green);color:var(--green);background:var(--green-light)}
+.grant-btn.yes.active{background:var(--green);color:#fff}
+.grant-btn.no{border-color:var(--red);color:var(--red);background:var(--red-light)}
+.grant-btn.no.active{background:var(--red);color:#fff}
+.add-leave-btn{display:block;width:calc(100% - 26px);margin:8px 13px;padding:9px;border:1.5px dashed var(--gold);border-radius:8px;background:transparent;color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center}
+
+.interchange-card{border:1px solid var(--blue);border-radius:10px;background:var(--blue-light);margin:8px 13px;padding:12px 13px}
+.interchange-hdr{font-size:11px;font-weight:700;color:var(--blue);margin-bottom:10px}
+.interchange-row{display:grid;grid-template-columns:1fr auto 1fr auto;gap:8px;align-items:center;margin-bottom:8px}
+.interchange-row:last-child{margin-bottom:0}
+.interchange-arrow{font-size:16px;color:var(--blue)}
+.interchange-del{background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;padding:0 4px}
+.interchange-del:hover{color:var(--red)}
+.interchange-sel{padding:7px 9px;border:1.5px solid var(--blue);border-radius:7px;font-size:12px;font-family:inherit;background:#fff;outline:none;width:100%}
+.add-interchange-btn{display:block;width:calc(100% - 26px);margin:6px 13px 12px;padding:8px;border:1.5px dashed var(--blue);border-radius:8px;background:transparent;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center}
+
+.present-card.interchange{border-color:var(--blue);background:var(--blue-light)}
+.present-card.interchange .present-status{color:var(--blue)}
+.present-card.on-leave{border-color:var(--orange);background:var(--orange-light);opacity:.7}
+.present-card.on-leave .present-status{color:var(--orange)}
+
+/* ── CAMERA TAB ── */
+.cam-category-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.cam-cat-card{background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;transition:all .15s}
+.cam-cat-card.captured{border-color:var(--green)}
+.cam-cat-hdr{padding:10px 12px;display:flex;align-items:center;justify-content:space-between}
+.cam-cat-icon{font-size:28px}
+.cam-cat-title{font-size:12px;font-weight:700;margin-top:4px;line-height:1.3}
+.cam-cat-status{font-size:10px;font-weight:700;color:var(--light)}
+.cam-cat-status.done{color:var(--green)}
+.cam-cat-thumb{width:100%;height:80px;object-fit:cover;display:block}
+.cam-cat-thumb-placeholder{width:100%;height:80px;background:#f5f4f0;display:flex;align-items:center;justify-content:center;font-size:24px;color:#ccc}
+.cam-meta{font-size:10px;color:var(--mid);padding:5px 10px;background:#f8f8f6;border-top:1px solid #f0ede8}
+.cam-info-bar{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.cam-info-bar .field-grid{margin-bottom:0}
+
+/* Grooming grid */
+.grooming-staff-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.grooming-card{background:#fff;border:1.5px solid var(--border);border-radius:12px;overflow:hidden;transition:all .15s}
+.grooming-card.ok{border-color:var(--green)}
+.grooming-card.fail{border-color:var(--red)}
+.grooming-card-hdr{background:var(--grey);padding:8px 12px;display:flex;align-items:center;justify-content:space-between}
+.grooming-name{font-size:12px;font-weight:700;color:#fff}
+.grooming-card-body{padding:8px 12px}
+.grooming-photo{width:100%;height:100px;object-fit:cover;border-radius:6px;display:block;margin-bottom:8px}
+.grooming-photo-ph{width:100%;height:100px;background:#f5f4f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:32px;color:#ccc;margin-bottom:8px;cursor:pointer}
+.grooming-checks{display:flex;flex-direction:column;gap:5px}
+.grooming-check-item{display:flex;align-items:center;gap:6px;font-size:11px}
+.grooming-check-item input{width:15px;height:15px;accent-color:var(--green);cursor:pointer}
+.grooming-grade{display:flex;gap:6px;margin-top:8px}
+.grade-btn{flex:1;padding:5px;border-radius:6px;border:1.5px solid;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+.grade-btn.a{border-color:var(--green);color:var(--green)}
+.grade-btn.a.active{background:var(--green);color:#fff}
+.grade-btn.b{border-color:var(--gold);color:#856404}
+.grade-btn.b.active{background:var(--gold);color:#1a1a1a}
+.grade-btn.c{border-color:var(--red);color:var(--red)}
+.grade-btn.c.active{background:var(--red);color:#fff}
+.cam-upload-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:10px;border:1.5px dashed var(--blue);border-radius:8px;background:var(--blue-light);color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:6px}
+
+/* ── PRODUCTIVITY TAB ── */
+.prod-toolbar{background:#fff;border-bottom:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:sticky;top:48px;z-index:99}
+.prod-block-size{display:flex;background:#f0ede8;border-radius:7px;padding:2px;gap:2px}
+.prod-block-btn{padding:4px 10px;border-radius:5px;border:none;background:transparent;font-size:11px;font-weight:700;cursor:pointer;color:#888;font-family:inherit;transition:all .15s}
+.prod-block-btn.active{background:#fff;color:var(--dark);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.prod-staff-sel{padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;background:#fff}
+.prod-staff-sel:focus{border-color:var(--gold)}
+
+.prod-grid{max-width:600px;margin:0 auto;padding:12px}
+.prod-time-row{display:grid;grid-template-columns:52px 1fr 90px 40px;gap:6px;padding:6px 0;border-bottom:1px solid #f5f4f0;align-items:center}
+.prod-time-row:last-child{border-bottom:none}
+.prod-time-lbl{font-size:11px;font-weight:700;color:var(--mid)}
+.prod-time-lbl.lunch{color:var(--orange)}
+.prod-task-inp{width:100%;padding:6px 9px;border:1.5px solid #ddd;border-radius:7px;font-size:12px;font-family:inherit;outline:none;background:transparent}
+.prod-task-inp:focus{border-color:var(--gold);background:#fff}
+.prod-task-inp.lunch-inp{background:#fff8e7;border-color:#f3d98a;color:var(--orange);font-weight:600;text-align:center;font-size:11px}
+.prod-cat-sel{padding:5px 6px;border:1.5px solid #ddd;border-radius:7px;font-size:11px;font-family:inherit;background:#fff;outline:none;width:100%}
+.prod-cat-sel:focus{border-color:var(--gold)}
+.prod-done-cb{width:20px;height:20px;border-radius:5px;border:2px solid #ccc;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;margin:0 auto;flex-shrink:0}
+.prod-done-cb.on{background:var(--green);border-color:var(--green)}
+.prod-done-cb.on::after{content:'';width:10px;height:6px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translateY(-1px);display:block}
+.prod-section-hdr{background:var(--grey);color:#fff;padding:6px 12px;font-size:10px;font-weight:700;border-radius:6px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
+.prod-row.lunch-row{background:#fff8e7}
+.prod-row.done-row{background:#f0faf2}
+.prod-summary-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+
+/* ── MONTHLY ANALYTICS ── */
+.analytics-wrap{max-width:600px;margin:0 auto;padding:12px}
+.analytics-kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+.analytics-kpi{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px}
+.analytics-kpi-lbl{font-size:10px;font-weight:700;color:var(--light);margin-bottom:4px}
+.analytics-kpi-val{font-size:20px;font-weight:800;color:var(--dark)}
+.analytics-kpi-change{font-size:11px;margin-top:3px;font-weight:600}
+.analytics-kpi-change.up{color:var(--green)}
+.analytics-kpi-change.down{color:var(--red)}
+.analytics-kpi-change.flat{color:var(--light)}
+.analytics-chart-wrap{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
+.analytics-chart-title{font-size:11px;font-weight:700;color:var(--light);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px}
+.bar-chart-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.bar-chart-lbl{font-size:11px;color:var(--mid);min-width:36px;text-align:right}
+.bar-chart-bg{flex:1;height:22px;background:#f5f4f0;border-radius:4px;overflow:hidden;position:relative}
+.bar-chart-fill{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:6px;font-size:10px;font-weight:700;color:#fff;transition:width .4s}
+.bar-chart-val{font-size:11px;font-weight:700;min-width:50px;text-align:right}
+
+/* WA Share */
+.wa-share-card{background:var(--green-light);border:1.5px solid var(--green);border-radius:10px;padding:14px;margin-bottom:12px}
+.wa-share-title{font-size:13px;font-weight:700;color:var(--green);margin-bottom:8px}
+.wa-share-preview{background:#fff;border-radius:8px;padding:10px;font-size:11px;line-height:1.6;white-space:pre-wrap;max-height:200px;overflow-y:auto;color:var(--dark);border:1px solid #c8e6c9;font-family:monospace;margin-bottom:8px}
+.wa-share-btn{background:#25D366;color:#fff;border:none;border-radius:8px;padding:11px;width:100%;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div>
+    <div class="logo">Bhartia <span>Enterprises</span></div>
+    <div class="logo-sub hi">दैनिक संचालन प्रणाली</div>
+  </div>
+  <div class="lang-toggle">
+    <button class="lang-btn active" onclick="setLang('hi')">हिंदी</button>
+    <button class="lang-btn" onclick="setLang('en')">Eng</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     TAB 1: CHECKLIST
+══════════════════════════════════════════════ -->
+<div class="tab-page active" id="tab-checklist">
+
+  <!-- step wizard bar -->
+  <div class="steps" id="cl-steps">
+    <div class="step active" onclick="clGoStep(0)"><div class="step-n">1</div><span data-hi="दुकान" data-en="Store">दुकान</span></div>
+    <div class="step-arr">›</div>
+    <div class="step" onclick="clGoStep(1)"><div class="step-n">2</div><span data-hi="जानकारी" data-en="Info">जानकारी</span></div>
+    <div class="step-arr">›</div>
+    <div class="step" onclick="clGoStep(2)"><div class="step-n">3</div><span data-hi="चेकलिस्ट" data-en="Checklist">चेकलिस्ट</span></div>
+    <div class="step-arr">›</div>
+    <div class="step" onclick="clGoStep(3)"><div class="step-n">4</div><span data-hi="आंकड़े" data-en="Figures">आंकड़े</span></div>
+    <div class="step-arr">›</div>
+    <div class="step" onclick="clGoStep(4)"><div class="step-n">5</div><span data-hi="जमा करें" data-en="Submit">जमा करें</span></div>
+  </div>
+
+  <div style="max-width:600px;margin:0 auto;padding:14px">
+
+    <!-- STEP 0 -->
+    <div class="cl-section active" id="cl-s0">
+      <div class="card" style="margin-top:2px">
+        <div class="card-title hi" data-hi="दुकान चुनें" data-en="Select Store">दुकान चुनें</div>
+        <div class="sel-grid">
+          <div class="sel-card" id="sel-bc" onclick="clSelectStore('BC')"><div class="ico">🏪</div><div class="ttl">Bhartia Collection</div><div class="sub hi">BC — Full Family Fashion</div></div>
+          <div class="sel-card" id="sel-vks" onclick="clSelectStore('VKS')"><div class="ico">👘</div><div class="ttl">Veer Kunwar Sa</div><div class="sub hi">VKS — Men's Ethnic</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title hi" data-hi="शीट का प्रकार" data-en="Sheet Type">शीट का प्रकार</div>
+        <div class="sel-grid">
+          <div class="sel-card" id="sel-open" onclick="clSelectType('opening')"><div class="ico">🌅</div><div class="ttl hi" data-hi="उद्घाटन" data-en="Opening">उद्घाटन</div><div class="sub">Opening Checklist</div></div>
+          <div class="sel-card" id="sel-close" onclick="clSelectType('closing')"><div class="ico">🌙</div><div class="ttl hi" data-hi="समापन" data-en="Closing">समापन</div><div class="sub">Closing Checklist</div></div>
+        </div>
+      </div>
+      <div class="btn-row"><button class="btn primary" onclick="clNextStep()" data-hi="आगे →" data-en="Next →">आगे →</button></div>
+    </div>
+
+    <!-- STEP 1 -->
+    <div class="cl-section" id="cl-s1">
+      <div class="card" style="margin-top:2px">
+        <div class="card-title hi" data-hi="बुनियादी जानकारी" data-en="Basic Information">बुनियादी जानकारी</div>
+        <div class="field-grid">
+          <div class="field"><label data-hi="प्रबंधक का नाम" data-en="Manager Name">प्रबंधक का नाम</label>
+            <select id="cl-manager"><option value="">-- चुनें --</option>
+              <optgroup label="BC"><option>Ramu</option><option>Abhishek</option><option>Sikander</option><option>Bijay</option><option>Kesri</option><option>Krishna</option></optgroup>
+              <optgroup label="VKS"><option>Kundan</option><option>Aakash</option><option>Akbar</option></optgroup>
+            </select></div>
+          <div class="field"><label data-hi="तारीख" data-en="Date">तारीख</label><input type="date" id="cl-date"></div>
+          <div class="field"><label data-hi="वास्तविक समय" data-en="Actual Time">वास्तविक समय</label><input type="time" id="cl-time"></div>
+          <div class="field"><label data-hi="पर्यवेक्षक" data-en="Supervisor">पर्यवेक्षक</label><input type="text" id="cl-supervisor" placeholder="Neel / Sikander..."></div>
+          <div class="field"><label data-hi="भरने वाला" data-en="Filled By">भरने वाला</label>
+            <select id="cl-filledby">
+              <option value="Employee">कर्मचारी (Employee)</option>
+              <option value="Manager">प्रबंधक (Manager)</option>
+              <option value="PC">PC</option>
+            </select></div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="clPrevStep()" data-hi="← वापस" data-en="← Back">← वापस</button>
+        <button class="btn primary" onclick="clNextStep()" data-hi="आगे →" data-en="Next →">आगे →</button>
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="cl-section" id="cl-s2">
+      <div id="cl-checklist-body"></div>
+      <div class="btn-row">
+        <button class="btn" onclick="clPrevStep()" data-hi="← वापस" data-en="← Back">← वापस</button>
+        <button class="btn primary" onclick="clNextStep()" data-hi="आगे →" data-en="Next →">आगे →</button>
+      </div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="cl-section" id="cl-s3">
+      <div id="cl-figures-body"></div>
+      <div class="btn-row">
+        <button class="btn" onclick="clPrevStep()" data-hi="← वापस" data-en="← Back">← वापस</button>
+        <button class="btn primary" onclick="clNextStep()" data-hi="आगे →" data-en="Next →">आगे →</button>
+      </div>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="cl-section" id="cl-s4">
+      <div id="cl-review-body"></div>
+      <div class="btn-row">
+        <button class="btn" onclick="clPrevStep()" data-hi="← वापस" data-en="← Back">← वापस</button>
+        <button class="btn green" onclick="clSubmit()" data-hi="✓ जमा करें" data-en="✓ Submit">✓ जमा करें</button>
+      </div>
+    </div>
+
+    <!-- LOADING + SUCCESS -->
+    <div class="loading-wrap" id="cl-loading"><div class="spinner"></div><div class="hi" data-hi="जमा हो रहा है..." data-en="Submitting...">जमा हो रहा है...</div></div>
+    <div class="success-wrap" id="cl-success">
+      <div class="success-icon">✅</div>
+      <div class="success-title hi" data-hi="सफलतापूर्वक जमा हुआ!" data-en="Submitted!">सफलतापूर्वक जमा हुआ!</div>
+      <div class="success-sub hi" id="cl-success-msg"></div>
+      <div class="sum-card" id="cl-success-summary"></div>
+      <button class="btn primary" onclick="clReset()" style="width:100%" data-hi="नई चेकलिस्ट भरें" data-en="Fill New Checklist">नई चेकलिस्ट भरें</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     TAB 2: ATTENDANCE
+══════════════════════════════════════════════ -->
+<div class="tab-page" id="tab-attendance">
+  <div class="att-store-bar">
+    <div class="field" style="flex:1;min-width:120px"><label data-hi="दुकान" data-en="Store">दुकान</label>
+      <select id="att-store" onchange="renderAttendance()">
+        <option value="BC">Bhartia Collection (BC)</option>
+        <option value="VKS">Veer Kunwar Sa (VKS)</option>
+      </select></div>
+    <div class="field" style="flex:1;min-width:130px"><label data-hi="तारीख" data-en="Date">तारीख</label><input type="date" id="att-date"></div>
+    <div class="field" style="flex:1;min-width:120px"><label data-hi="सुपरवाइज़र" data-en="Supervisor">सुपरवाइज़र</label><input type="text" id="att-supervisor" placeholder="Neel..."></div>
+  </div>
+
+  <div class="att-summary-bar" id="att-summary">
+    <div class="att-sum-item hi">उपस्थित: <span id="att-sum-present">0</span></div>
+    <div class="att-sum-item hi">अनुपस्थित: <span id="att-sum-absent">0</span></div>
+    <div class="att-sum-item hi">देर से: <span id="att-sum-late">0</span></div>
+    <div class="att-sum-item hi">अर्धकालिक: <span id="att-sum-half">0</span></div>
+  </div>
+
+  <div class="att-table-wrap" id="att-rows-wrap"></div>
+
+  <div class="card">
+    <div class="card-title hi" data-hi="आज क्या रिपोर्ट जमा हुई" data-en="Reports submitted today">आज क्या रिपोर्ट जमा हुई</div>
+    <div id="att-reports-submitted" style="font-size:12px;color:var(--mid)">—</div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn green" onclick="attSubmit()" data-hi="✓ उपस्थिति जमा करें" data-en="✓ Submit Attendance">✓ उपस्थिति जमा करें</button>
+  </div>
+  <div class="loading-wrap" id="att-loading"><div class="spinner"></div><div class="hi">जमा हो रहा है...</div></div>
+  <div class="success-wrap" id="att-success">
+    <div class="success-icon">✅</div>
+    <div class="success-title hi">उपस्थिति जमा हुई!</div>
+    <div class="success-sub hi" id="att-success-msg"></div>
+    <button class="btn primary" onclick="attReset()" style="width:100%" data-hi="नई उपस्थिति भरें" data-en="Fill Again">नई उपस्थिति भरें</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     TAB 3: REPORTS
+══════════════════════════════════════════════ -->
+<div class="tab-page" id="tab-reports">
+
+  <!-- PIN SCREEN -->
+  <div class="pin-screen" id="pin-screen">
+    <div class="pin-icon">🔐</div>
+    <div class="pin-title hi" data-hi="मालिक / पर्यवेक्षक" data-en="Owner / Supervisor">मालिक / पर्यवेक्षक</div>
+    <div class="pin-sub hi" data-hi="रिपोर्ट देखने के लिए PIN डालें" data-en="Enter PIN to view reports">रिपोर्ट देखने के लिए PIN डालें</div>
+    <input class="pin-input" type="password" id="pin-input" maxlength="4" placeholder="••••" oninput="pinCheck(this.value)">
+    <div class="pin-error" id="pin-error"></div>
+    <div style="font-size:11px;color:#bbb;margin-top:16px">Default PIN: 1234 — change in SETUP_GUIDE.md</div>
+  </div>
+
+  <!-- REPORTS SCREEN -->
+  <div class="reports-screen" id="reports-screen">
+    <div class="rep-filter-bar">
+      <div class="field"><label data-hi="दुकान" data-en="Store">दुकान</label>
+        <select id="rep-store-filter" onchange="filterReports()">
+          <option value="">All / सभी</option>
+          <option value="BC">BC</option>
+          <option value="VKS">VKS</option>
+        </select></div>
+      <div class="field"><label data-hi="तारीख" data-en="Date">तारीख</label>
+        <input type="date" id="rep-date-filter" onchange="filterReports()"></div>
+      <div class="field"><label data-hi="प्रकार" data-en="Type">प्रकार</label>
+        <select id="rep-type-filter" onchange="filterReports()">
+          <option value="">All / सभी</option>
+          <option value="opening">Opening</option>
+          <option value="closing">Closing</option>
+          <option value="attendance">Attendance</option>
+        </select></div>
+      <button class="btn" style="flex:0;padding:8px 14px;align-self:flex-end" onclick="loadReports()">🔄</button>
+    </div>
+
+    <div class="rep-stats">
+      <div class="rep-stat"><div class="rep-stat-lbl hi" data-hi="कुल जमा" data-en="Total Submitted">कुल जमा</div><div class="rep-stat-val b" id="rep-total">—</div></div>
+      <div class="rep-stat"><div class="rep-stat-lbl hi" data-hi="आज की" data-en="Today's">आज की</div><div class="rep-stat-val g" id="rep-today">—</div></div>
+      <div class="rep-stat"><div class="rep-stat-lbl hi" data-hi="BC रिपोर्ट" data-en="BC Reports">BC रिपोर्ट</div><div class="rep-stat-val" id="rep-bc">—</div></div>
+      <div class="rep-stat"><div class="rep-stat-lbl hi" data-hi="VKS रिपोर्ट" data-en="VKS Reports">VKS रिपोर्ट</div><div class="rep-stat-val o" id="rep-vks">—</div></div>
+    </div>
+
+    <div class="loading-spinner" id="rep-loading" style="display:none">⏳ <span data-hi="लोड हो रहा है..." data-en="Loading...">लोड हो रहा है...</span></div>
+    <div class="rep-list" id="rep-list"></div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     TAB 4: TASKS
+══════════════════════════════════════════════ -->
+<div class="tab-page" id="tab-tasks">
+
+  <!-- ROLE SELECTOR -->
+  <div class="task-role-bar" id="task-role-bar">
+    <div class="task-role-left">
+      <button class="task-role-btn active" id="trb-my" onclick="setTaskView('my')">
+        <span>👤</span><span class="hi" data-hi="मेरे टास्क" data-en="My Tasks">मेरे टास्क</span>
+        <span class="task-count-badge" id="my-task-count">0</span>
+      </button>
+      <button class="task-role-btn" id="trb-owner" onclick="setTaskView('owner')">
+        <span>👑</span><span class="hi" data-hi="ओनर व्यू" data-en="Owner View">ओनर व्यू</span>
+        <span class="task-count-badge" id="all-task-count">0</span>
+      </button>
+    </div>
+    <button class="task-add-fab" onclick="openQuickAdd()">+ <span class="hi" data-hi="टास्क" data-en="Task">टास्क</span></button>
+  </div>
+
+  <!-- MY TASKS VIEW -->
+  <div id="task-view-my" style="max-width:600px;margin:0 auto;padding:12px">
+    <!-- Quick stats -->
+    <div class="task-stats-row">
+      <div class="task-stat"><div class="task-stat-num" id="ts-pending">0</div><div class="task-stat-lbl hi" data-hi="बाकी" data-en="Pending">बाकी</div></div>
+      <div class="task-stat red"><div class="task-stat-num" id="ts-urgent">0</div><div class="task-stat-lbl hi" data-hi="अत्यावश्यक" data-en="Urgent">अत्यावश्यक</div></div>
+      <div class="task-stat green"><div class="task-stat-num" id="ts-done">0</div><div class="task-stat-lbl hi" data-hi="पूरे" data-en="Done">पूरे</div></div>
+      <div class="task-stat amber"><div class="task-stat-num" id="ts-carried">0</div><div class="task-stat-lbl hi" data-hi="कैरी फॉरवर्ड" data-en="Carried">कैरी फॉरवर्ड</div></div>
+    </div>
+
+    <!-- Filters -->
+    <div class="task-filter-row">
+      <button class="task-filter-btn active" onclick="filterMyTasks('all',this)" data-hi="सभी" data-en="All">सभी</button>
+      <button class="task-filter-btn" onclick="filterMyTasks('urgent',this)" data-hi="🔴 अत्यावश्यक" data-en="🔴 Urgent">🔴 अत्यावश्यक</button>
+      <button class="task-filter-btn" onclick="filterMyTasks('pending',this)" data-hi="⏳ बाकी" data-en="⏳ Pending">⏳ बाकी</button>
+      <button class="task-filter-btn" onclick="filterMyTasks('done',this)" data-hi="✅ पूरे" data-en="✅ Done">✅ पूरे</button>
+      <button class="task-filter-btn" onclick="filterMyTasks('carried',this)" data-hi="📌 कैरी" data-en="📌 Carried">📌 कैरी</button>
+    </div>
+
+    <!-- Who am I selector -->
+    <div class="task-who-row">
+      <span class="task-who-lbl hi" data-hi="मैं हूँ:" data-en="I am:">मैं हूँ:</span>
+      <select id="task-whoami" onchange="renderMyTasks()" style="padding:6px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none">
+        <option value="">-- चुनें / Select --</option>
+        <optgroup label="BC">
+          <option>Ramu</option><option>Abhishek</option><option>Sikander</option>
+          <option>Bijay</option><option>Kesri</option><option>Krishna</option>
+        </optgroup>
+        <optgroup label="VKS">
+          <option>Kundan</option><option>Aakash</option><option>Akbar</option>
+        </optgroup>
+        <option value="Owner">Owner (Neel)</option>
+      </select>
+    </div>
+
+    <div id="my-task-list"></div>
+  </div>
+
+  <!-- OWNER VIEW -->
+  <div id="task-view-owner" style="display:none;max-width:600px;margin:0 auto;padding:12px">
+    <!-- Store tabs -->
+    <div class="owner-store-tabs">
+      <button class="owner-store-tab active" id="ost-bc" onclick="setOwnerStore('BC')">🏪 BC</button>
+      <button class="owner-store-tab" id="ost-vks" onclick="setOwnerStore('VKS')">👘 VKS</button>
+      <button class="owner-store-tab" id="ost-all" onclick="setOwnerStore('ALL')">📋 <span class="hi" data-hi="सभी" data-en="All">सभी</span></button>
+    </div>
+
+    <!-- Manager filter -->
+    <div class="owner-mgr-filter">
+      <span class="task-who-lbl hi" data-hi="प्रबंधक:" data-en="Manager:">प्रबंधक:</span>
+      <select id="owner-mgr-filter" onchange="renderOwnerTasks()" style="padding:6px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;flex:1">
+        <option value="">सभी / All Managers</option>
+      </select>
+    </div>
+
+    <!-- Owner stats -->
+    <div class="owner-task-stats" id="owner-task-stats"></div>
+
+    <!-- Grouped by assignee -->
+    <div id="owner-task-list"></div>
+  </div>
+
+</div>
+
+<!-- QUICK ADD TASK MODAL -->
+<div class="task-modal-overlay" id="task-modal" onclick="closeModal(event)">
+  <div class="task-modal-box">
+    <div class="task-modal-title hi" data-hi="नया टास्क जोड़ें" data-en="Add New Task">नया टास्क जोड़ें</div>
+
+    <div class="task-modal-from" id="modal-from-label"></div>
+
+    <div class="field" style="margin-bottom:10px">
+      <label class="hi" data-hi="टास्क क्या है?" data-en="What is the task?">टास्क क्या है?</label>
+      <textarea id="task-desc-input" rows="3" placeholder="Task description..." style="width:100%;padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;resize:none;outline:none"></textarea>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="field">
+        <label class="hi" data-hi="किसको सौंपा" data-en="Assign To">किसको सौंपा</label>
+        <select id="task-assign-input" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+          <option value="Manager">Manager (खुद)</option>
+          <option value="Owner (Neel)">Owner (Neel)</option>
+          <optgroup label="BC Staff" id="modal-bc-opts">
+            <option>Ramu</option><option>Abhishek</option><option>Sikander</option>
+            <option>Bijay</option><option>Kesri</option><option>Krishna</option>
+          </optgroup>
+          <optgroup label="VKS Staff" id="modal-vks-opts">
+            <option>Kundan</option><option>Aakash</option><option>Akbar</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="field">
+        <label class="hi" data-hi="दुकान" data-en="Store">दुकान</label>
+        <select id="task-store-input" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+          <option value="BC">BC</option>
+          <option value="VKS">VKS</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="field">
+        <label class="hi" data-hi="प्राथमिकता" data-en="Priority">प्राथमिकता</label>
+        <select id="task-priority-input" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+          <option value="urgent">🔴 अत्यावश्यक / Urgent</option>
+          <option value="normal" selected>🟡 सामान्य / Normal</option>
+          <option value="low">🟢 कम / Low</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="hi" data-hi="कब तक" data-en="Due">कब तक</label>
+        <select id="task-due-input" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+          <option value="today">आज / Today</option>
+          <option value="tomorrow">कल / Tomorrow</option>
+          <option value="this_week">इस हफ्ते / This Week</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field" style="margin-bottom:14px">
+      <label class="hi" data-hi="जोड़ने वाला (आपका नाम)" data-en="Added By (your name)">जोड़ने वाला (आपका नाम)</label>
+      <select id="task-addedby-input" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+        <option value="">-- चुनें --</option>
+        <option>Ramu</option><option>Abhishek</option><option>Sikander</option>
+        <option>Bijay</option><option>Kesri</option><option>Krishna</option>
+        <option>Kundan</option><option>Aakash</option><option>Akbar</option>
+        <option value="Owner (Neel)">Owner (Neel)</option>
+      </select>
+    </div>
+
+    <div style="display:flex;gap:10px">
+      <button class="btn" onclick="closeModal(null)" style="flex:1">रद्द करें / Cancel</button>
+      <button class="btn green" onclick="saveTask()" style="flex:2">✓ <span class="hi" data-hi="टास्क जोड़ें" data-en="Add Task">टास्क जोड़ें</span></button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     CAMERA TAB
+══════════════════════════════════════════════ -->
+<div class="tab-page" id="tab-camera">
+  <div class="cam-info-bar">
+    <div class="field-grid">
+      <div class="field"><label data-hi="दुकान" data-en="Store">दुकान</label>
+        <select id="cam-store" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+          <option value="BC">Bhartia Collection (BC)</option>
+          <option value="VKS">Veer Kunwar Sa (VKS)</option>
+        </select></div>
+      <div class="field"><label data-hi="खींचने वाला" data-en="Captured By">खींचने वाला</label>
+        <select id="cam-by" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+          <option value="">-- चुनें --</option>
+          <option>Ramu</option><option>Abhishek</option><option>Sikander</option>
+          <option>Bijay</option><option>Kesri</option><option>Krishna</option>
+          <option>Kundan</option><option>Aakash</option><option>Akbar</option>
+        </select></div>
+    </div>
+  </div>
+
+  <!-- Store Opening Photos -->
+  <div class="sec-hdr green" style="margin:0 0 0 0;border-radius:8px 8px 0 0;padding:10px 14px">
+    <span class="hi" data-hi="🏪 दुकान उद्घाटन फोटो" data-en="🏪 Store Opening Photos">🏪 दुकान उद्घाटन फोटो</span>
+    <span id="cam-open-progress" style="font-size:11px;color:#d4a843">0/4</span>
+  </div>
+  <div style="background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;padding:12px;margin-bottom:12px">
+    <div class="cam-category-grid" id="cam-opening-grid"></div>
+  </div>
+
+  <!-- Staff Grooming -->
+  <div class="sec-hdr orange" style="margin:0 0 0 0;border-radius:8px 8px 0 0;padding:10px 14px">
+    <span class="hi" data-hi="👔 स्टाफ ग्रूमिंग चेक" data-en="👔 Staff Grooming Check">👔 स्टाफ ग्रूमिंग चेक</span>
+    <span id="cam-groom-progress" style="font-size:11px;color:#eee">0/0</span>
+  </div>
+  <div style="background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;padding:12px;margin-bottom:12px">
+    <div class="grooming-staff-grid" id="cam-grooming-grid"></div>
+  </div>
+
+  <!-- Closing Photos -->
+  <div class="sec-hdr grey" style="margin:0 0 0 0;border-radius:8px 8px 0 0;padding:10px 14px">
+    <span class="hi" data-hi="🌙 दुकान समापन फोटो" data-en="🌙 Store Closing Photos">🌙 दुकान समापन फोटो</span>
+  </div>
+  <div style="background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;padding:12px;margin-bottom:12px">
+    <div class="cam-category-grid" id="cam-closing-grid"></div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn green" onclick="submitCameraReport()" data-hi="✓ फोटो रिपोर्ट जमा करें" data-en="✓ Submit Photo Report">✓ फोटो रिपोर्ट जमा करें</button>
+    <button class="btn" onclick="openDriveFolder()" style="background:var(--blue-light);color:var(--blue);border-color:var(--blue)" data-hi="📁 Drive फोल्डर देखें" data-en="📁 View Drive Folder">📁 Drive फोल्डर</button>
+  </div>
+  <div class="success-wrap" id="cam-success">
+    <div class="success-icon">📸</div>
+    <div class="success-title hi">फोटो जमा हुई!</div>
+    <div class="success-sub hi" id="cam-success-msg"></div>
+    <button class="btn primary" onclick="camReset()" style="width:100%">नई फोटो खींचें</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PRODUCTIVITY TAB
+══════════════════════════════════════════════ -->
+<div class="tab-page" id="tab-productivity">
+  <div class="prod-toolbar">
+    <div class="field-group">
+      <span class="field-lbl hi" data-hi="कर्मचारी" data-en="Staff">कर्मचारी</span>
+      <select class="prod-staff-sel" id="prod-staff" onchange="renderProductivity()">
+        <option value="">-- चुनें --</option>
+        <optgroup label="BC"><option>Ramu</option><option>Abhishek</option><option>Sikander</option><option>Bijay</option><option>Kesri</option><option>Krishna</option></optgroup>
+        <optgroup label="VKS"><option>Kundan</option><option>Aakash</option><option>Akbar</option></optgroup>
+      </select>
+    </div>
+    <div class="field-group">
+      <span class="field-lbl hi" data-hi="तारीख" data-en="Date">तारीख</span>
+      <input type="date" id="prod-date" class="prod-staff-sel" onchange="renderProductivity()">
+    </div>
+    <div class="field-group">
+      <span class="field-lbl hi" data-hi="ब्लॉक" data-en="Block">ब्लॉक</span>
+      <div class="prod-block-size">
+        <button class="prod-block-btn active" onclick="setProdBlock(15,this)">15m</button>
+        <button class="prod-block-btn" onclick="setProdBlock(30,this)">30m</button>
+        <button class="prod-block-btn" onclick="setProdBlock(60,this)">60m</button>
+      </div>
+    </div>
+  </div>
+  <div class="prod-grid">
+    <div class="prod-summary-bar">
+      <div class="task-stat"><div class="task-stat-num blue" id="prod-filled">0</div><div class="task-stat-lbl hi" data-hi="भरे स्लॉट" data-en="Filled">भरे स्लॉट</div></div>
+      <div class="task-stat green"><div class="task-stat-num" id="prod-done">0</div><div class="task-stat-lbl hi" data-hi="पूरे" data-en="Done">पूरे</div></div>
+      <div class="task-stat"><div class="task-stat-num" id="prod-pct">0%</div><div class="task-stat-lbl hi" data-hi="क्षमता" data-en="Productivity">क्षमता</div></div>
+    </div>
+    <div id="prod-rows"></div>
+    <div class="btn-row">
+      <button class="btn green" onclick="submitProductivity()" data-hi="✓ शीट जमा करें" data-en="✓ Submit Sheet">✓ शीट जमा करें</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     MONTHLY ANALYTICS TAB
+══════════════════════════════════════════════ -->
+<div class="tab-page" id="tab-analytics">
+  <div style="background:#fff;border-bottom:1px solid var(--border);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:sticky;top:48px;z-index:99">
+    <div class="field-group">
+      <span class="field-lbl hi" data-hi="दुकान" data-en="Store">दुकान</span>
+      <select id="ana-store" onchange="renderAnalytics()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none">
+        <option value="">सभी / All</option><option value="BC">BC</option><option value="VKS">VKS</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <span class="field-lbl hi" data-hi="महीना" data-en="Month">महीना</span>
+      <input type="month" id="ana-month" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none" onchange="renderAnalytics()">
+    </div>
+    <button class="btn" style="padding:7px 14px;font-size:12px" onclick="renderAnalytics()">🔄</button>
+    <button class="btn" style="padding:7px 14px;font-size:12px;background:var(--green);color:#fff;border-color:var(--green)" onclick="openWAShare()">📲 WA Share</button>
+  </div>
+  <div class="analytics-wrap" id="analytics-body">
+    <div class="empty-tasks"><div class="empty-tasks-icon">📊</div><div class="hi" data-hi="महीना चुनें और लोड करें" data-en="Select month and load">महीना चुनें और लोड करें</div></div>
+  </div>
+  <!-- WA Share Panel -->
+  <div style="max-width:600px;margin:0 auto;padding:0 12px 12px;display:none" id="wa-share-panel">
+    <div class="wa-share-card">
+      <div class="wa-share-title">📲 WhatsApp Weekly Review Share</div>
+      <div class="field" style="margin-bottom:8px">
+        <label class="hi" data-hi="कर्मचारी चुनें" data-en="Select Employee">कर्मचारी चुनें</label>
+        <select id="wa-emp-sel" onchange="generateWAReport()" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+          <option value="">-- चुनें --</option>
+          <optgroup label="BC"><option>Ramu</option><option>Abhishek</option><option>Sikander</option><option>Bijay</option><option>Kesri</option><option>Krishna</option></optgroup>
+          <optgroup label="VKS"><option>Kundan</option><option>Aakash</option><option>Akbar</option></optgroup>
+        </select>
+      </div>
+      <div class="wa-share-preview" id="wa-preview">कर्मचारी चुनें...</div>
+      <button class="wa-share-btn" onclick="sendWAReport()">
+        <span style="font-size:18px">💬</span> WhatsApp पर भेजें / Send on WhatsApp
+      </button>
+    </div>
+  </div>
+</div>
+<!-- BOTTOM NAV -->
+<div class="bottom-nav">
+  <button class="nav-btn active" onclick="switchTab('checklist')" id="nav-checklist">
+    <div class="nav-icon">📝</div><span class="hi" data-hi="चेकलिस्ट" data-en="Checklist">चेकलिस्ट</span>
+  </button>
+  <button class="nav-btn" onclick="switchTab('attendance')" id="nav-attendance">
+    <div class="nav-icon">👥</div><span class="hi" data-hi="उपस्थिति" data-en="Attendance">उपस्थिति</span>
+  </button>
+  <button class="nav-btn" onclick="switchTab('tasks')" id="nav-tasks">
+    <div class="nav-icon">✅</div><span class="hi" data-hi="टास्क" data-en="Tasks">टास्क</span>
+  </button>
+  <button class="nav-btn" onclick="switchTab('camera')" id="nav-camera">
+    <div class="nav-icon">📸</div><span class="hi" data-hi="कैमरा" data-en="Camera">कैमरा</span>
+  </button>
+  <button class="nav-btn" onclick="switchTab('productivity')" id="nav-productivity">
+    <div class="nav-icon">⏱️</div><span class="hi" data-hi="प्रोडक्टिविटी" data-en="Productivity">प्रोडक्टिविटी</span>
+  </button>
+  <button class="nav-btn" onclick="switchTab('analytics')" id="nav-analytics">
+    <div class="nav-icon">📈</div><span class="hi" data-hi="एनालिटिक्स" data-en="Analytics">एनालिटिक्स</span>
+  </button>
+  <button class="nav-btn" onclick="switchTab('reports')" id="nav-reports">
+    <div class="nav-icon">📊</div><span class="hi" data-hi="रिपोर्ट" data-en="Reports">रिपोर्ट</span>
+  </button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// CONFIG — REPLACE AFTER DEPLOYING APPS SCRIPT
+// ══════════════════════════════════════════════════════
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzNVv8qwdqysoQDCyWB_9Q1Ksc14-nNjSapWOH9Rzi10LWPYPpYIu48I_add1At8fT-/exec';
+const OWNER_PIN  = '1234'; // Change this to your preferred PIN
+
+// ══════════════════════════════════════════════════════
+// DATA CONSTANTS
+// ══════════════════════════════════════════════════════
+const TEAMS = {
+  BC:  ['Ramu','Abhishek','Sikander','Bijay','Kesri','Krishna'],
+  VKS: ['Kundan','Aakash','Akbar']
+};
+
+const STATUS_OPTIONS = [
+  {key:'present', hi:'उपस्थित ✅',   en:'Present ✅',   cls:'present'},
+  {key:'absent',  hi:'अनुपस्थित ❌', en:'Absent ❌',     cls:'absent'},
+  {key:'late',    hi:'देर से ⏰',     en:'Late ⏰',       cls:'late'},
+  {key:'halfday', hi:'अर्धकालिक 🌗', en:'Half Day 🌗',   cls:'halfday'},
+];
+
+const OPEN_INFRA = [
+  {k:'lights',  hi:'लाइट और AC चालू किया',                    en:'Lights & AC switched ON',                   t:true},
+  {k:'floor',   hi:'फर्श झाड़ा, पोंछा और कॉलिन स्प्रे',      en:'Floor swept, mopped & Colin spray done',    t:true},
+  {k:'brooms',  hi:'झाड़ू/बाल्टी ग्राहक की नजर से हटाई',     en:'Brooms/buckets removed from view',          t:false},
+  {k:'golch',   hi:'बाहर गोलचक्री/हैंगर डिस्प्ले अपडेट',    en:'Outside golchakri/hanger display updated',  t:true},
+];
+const OPEN_FLOOR_BC = [
+  {k:'walkthrough', hi:'मुख्य फर्श निरीक्षण पूरा (प्रबंधक फर्श पर)', en:'Main floor walk-through done (mgr on floor)'},
+  {k:'sides',       hi:'किनारे और कोने जांचे — धूल साफ',              en:'Side-sides checked — dust cleared'},
+  {k:'sections',    hi:'महिला/पुरुष/बच्चों के सेक्शन व्यवस्थित',      en:'Ladies/Gents/Kids sections organised'},
+  {k:'offer_post',  hi:'ऑफर पोस्टर प्रमुख स्थानों पर लगाए',           en:'Offer posters pasted in prominent areas'},
+  {k:'order',       hi:'ग्राहक की जरूरत/दोबारा ऑर्डर दिया',            en:'Customer requirements / repeat orders given'},
+];
+const OPEN_FLOOR_VKS = [
+  {k:'ethnic',   hi:'पुरुष एथनिक — शेरवानी/कुर्ता/ब्लेज़र/सूट/इंडो/जोधपुरी', en:"Men's Ethnic: Sherwani/Kurta/Blazer/Suit/Indo/Jodhpuri"},
+  {k:'menswear', hi:'पुरुष वियर — जींस/शर्ट/टी-शर्ट/ट्राउज़र',               en:"Men's Wear: Jeans/Shirt/T-Shirt/Trousers"},
+  {k:'kids',     hi:'बच्चों का एथनिक — शेरवानी/कुर्ता/ब्लेज़र/सूट/इंडो',     en:"Kids Ethnic: Sherwani/Kurta/Blazer/Suit/Indo"},
+  {k:'access',   hi:'एक्सेसरीज़ — दुपट्टा/सेहरा/कंठी/जूती/टाई',             en:"Accessories: Dupatta/Sehra/Kanthi/Juti/Tie"},
+  {k:'sides',    hi:'किनारे और कोने जांचे — धूल साफ',                         en:"Side-sides checked — dust cleared"},
+  {k:'offer_post',hi:'ऑफर पोस्टर प्रमुख स्थानों पर लगाए',                     en:'Offer posters pasted in prominent areas'},
+  {k:'order',    hi:'ग्राहक की जरूरत/दोबारा ऑर्डर दिया',                      en:'Customer requirements / repeat orders given'},
+];
+const OPEN_INV = [
+  {k:'erp',   hi:'POS/Marg ERP बिलिंग सिस्टम शुरू और जांचा',       en:'POS/Marg ERP billing system started & verified'},
+  {k:'cash',  hi:'कैश दराज गिनी और ओपनिंग फ्लोट जांचा',            en:'Cash drawer counted & opening float verified'},
+  {k:'stock', hi:'स्टॉक उम्र जांची — 2021:घटाएं|2022:फ्रीबी|2023:तेज', en:'Stock age: 2021 Slash|2022 Freebie|2023 Fast'},
+  {k:'clear', hi:'पुराना/क्लियरेंस स्टॉक ऑफर क्षेत्र में सेट',     en:'Old/clearance stock set up in offer area'},
+];
+const CLOSE_INFRA = [
+  {k:'lights',   hi:'सभी अंदरूनी लाइट और AC बंद',        en:'All internal lights & AC switched OFF',     t:true},
+  {k:'floor',    hi:'फर्श झाड़ा और अगले दिन के लिए साफ', en:'Floor swept & set clean for next day',      t:true},
+  {k:'brooms',   hi:'झाड़ू/सफाई का सामान रखा',           en:'Brooms/cleaning tools stored away',         t:false},
+  {k:'golch',    hi:'बाहर गोलचक्री/हैंगर डिस्प्ले सुरक्षित', en:'Outside golchakri/hanger display secured', t:false},
+  {k:'shutters', hi:'डिस्प्ले बंद/कांच केस बंद/शटर बंद', en:'Display locked/glass cases/shutters down',  t:false},
+];
+const CLOSE_BILLING = [
+  {k:'erp',   hi:'सभी बिक्री Marg ERP में दर्ज — कोई बिल छूटे नहीं', en:'All sales in Marg ERP — zero unlogged bills'},
+  {k:'cash',  hi:'नकद गिना और बिलों से मिलाया',                        en:'Cash counted & tallied with bills'},
+  {k:'upi',   hi:'UPI भुगतान मिलाए',                                    en:'UPI payments reconciled'},
+  {k:'petty', hi:'छोटे नकद/दैनिक खर्च दर्ज',                           en:'Petty cash / daily expenses logged'},
+];
+const CLOSE_FLOOR = [
+  {k:'setting',   hi:'फर्श सेटिंग पूरी — सभी सेक्शन अगले दिन के लिए',   en:'Floor setting done — all sections organised'},
+  {k:'trial',     hi:'ट्रायल रूम साफ, जांचे और बंद',                      en:'Trial rooms cleaned, checked & locked'},
+  {k:'pending',   hi:'लंबित ग्राहक ऑर्डर कल के लिए नोट',                 en:'Pending customer orders noted for tomorrow'},
+  {k:'alteration',hi:'बदलाव (सिलाई) दर्जी को दिए — ग्राहक नाम व तारीख',  en:'Alterations given to tailor with name & date'},
+];
+const CLOSE_STAFF = [
+  {k:'att',     hi:'स्टाफ उपस्थिति बंद — सटीक समय-बाहर दर्ज',           en:'Staff attendance closed — exact time-out recorded'},
+  {k:'idle',    hi:'कोई निष्क्रिय स्टाफ नहीं — धीमे समय के काम पूरे',  en:'No idle staff — slow hour tasks completed'},
+  {k:'targets', hi:'अगले दिन के टारगेट सेट और हर कर्मचारी को दिए',      en:'Next day targets set & given to each employee'},
+  {k:'brief',   hi:'अगले दिन के असाइनमेंट सभी स्टाफ को बताए',           en:'Next day assignments communicated to all staff'},
+  {k:'lockup',  hi:'प्रबंधक ने स्वयं लॉक-अप और सुरक्षा की पुष्टि',      en:'Manager personally confirms lock-up & security'},
+];
+const FIGURES = [
+  {col:'blue', sub:'बिक्री प्रदर्शन / Sales Performance', g:'g4', items:[
+    {k:'bills',      hi:'बने बिल',             en:'Bills Made'},
+    {k:'items',      hi:'कुल आइटम बेचे',       en:'Items Sold'},
+    {k:'total_sales',hi:'कुल बिक्री (₹)',       en:'Total Sales (₹)'},
+    {k:'repeat',     hi:'दोबारा ग्राहक',       en:'Repeat Customers'},
+    {k:'newcust',    hi:'नए ग्राहक',            en:'New Customers'},
+    {k:'avg_bill',   hi:'औसत बिल मूल्य (₹) [auto]', en:'Avg Bill Value (₹) [auto]'},
+    {k:'avg_item',   hi:'औसत आइटम मूल्य (₹) [auto]', en:'Avg Item Value (₹) [auto]'},
+  ]},
+  {col:'orange', sub:'स्टॉक और ऑर्डर / Stock', g:'g3', items:[
+    {k:'rbsold',  hi:'RB स्टॉक बेचा',     en:'RB Stock Sold'},
+    {k:'hoorder', hi:'HO ऑर्डर दिए',      en:'HO Orders Given'},
+    {k:'tailor',  hi:'दर्जी को बदलाव',    en:'Alterations to Tailor'},
+  ]},
+  {col:'green', sub:'ग्राहक संपर्क / Engagement', g:'g3', items:[
+    {k:'walkin',  hi:'वॉक-इन/लीड',        en:'Walk-ins / Leads'},
+    {k:'coupon',  hi:'कूपन वितरित',        en:'Coupons Distributed'},
+    {k:'review',  hi:'गूगल समीक्षाएं',    en:'Google Reviews'},
+  ]},
+  {col:'purple', sub:'डिजिटल पहुंच / Digital', g:'g4', items:[
+    {k:'waviews',   hi:'WA व्यूज़',          en:'WA Status Views'},
+    {k:'wareply',   hi:'WA पूछताछ जवाब',    en:'WA Enquiry Replies'},
+    {k:'fbreply',   hi:'FB/Meta जवाब',       en:'FB/Meta Replies'},
+    {k:'instreply', hi:'Instagram जवाब',     en:'Instagram Replies'},
+  ]},
+];
+
+// ══════════════════════════════════════════════════════
+// GLOBAL STATE
+// ══════════════════════════════════════════════════════
+let lang = 'hi';
+let clState = {store:null,type:null,step:0,checks:{},times:{},repairs:{},figures:{},assignments:{},priorities:['','',''],priAssign:['','',''],mgrNotes:'',rsNotes:''};
+let attState = {}; // keyed by staff name
+let allReports = [];
+
+// ══════════════════════════════════════════════════════
+// LANGUAGE
+// ══════════════════════════════════════════════════════
+function setLang(l){
+  lang=l;
+  document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',
+    (l==='hi'&&b.textContent.includes('हि'))||(l==='en'&&b.textContent==='Eng')));
+  document.querySelectorAll('[data-hi]').forEach(el=>el.textContent=el.getAttribute('data-'+l));
+  buildClChecklist(); buildClFigures(); buildClReview();
+  renderAttendance();
+}
+function t(o){return o[lang]||o.hi||o.en||''}
+
+// ══════════════════════════════════════════════════════
+// TAB SWITCHING
+// ══════════════════════════════════════════════════════
+function switchTab(tab){
+  document.querySelectorAll('.tab-page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.getElementById('nav-'+tab).classList.add('active');
+  if(tab==='attendance')   renderAttendance();
+  if(tab==='reports')      initReports();
+  if(tab==='tasks'){       carryForwardTasks(); renderMyTasks(); updateTaskCounts(); }
+  if(tab==='camera')       initCamera();
+  if(tab==='productivity') renderProductivity();
+  if(tab==='analytics')    renderAnalytics();
+  window.scrollTo(0,0);
+}
+
+// ══════════════════════════════════════════════════════
+// CHECKLIST TAB
+// ══════════════════════════════════════════════════════
+function clSelectStore(s){clState.store=s;document.querySelectorAll('[id^="sel-bc"],[id="sel-vks"]').forEach(c=>c.classList.remove('selected'));document.getElementById('sel-'+s.toLowerCase()).classList.add('selected');}
+function clSelectType(t){clState.type=t;document.getElementById('sel-open').classList.toggle('selected',t==='opening');document.getElementById('sel-close').classList.toggle('selected',t==='closing');}
+
+function clGoStep(n){if(n>clState.step&&!clValidate(clState.step))return;clState.step=n;clRenderStep();}
+function clNextStep(){if(!clValidate(clState.step))return;clState.step++;clRenderStep();}
+function clPrevStep(){clState.step=Math.max(0,clState.step-1);clRenderStep();}
+function clRenderStep(){
+  const s=clState.step;
+  document.querySelectorAll('.cl-section').forEach((el,i)=>el.classList.toggle('active',i===s));
+  document.querySelectorAll('#cl-steps .step').forEach((el,i)=>{el.classList.toggle('active',i===s);el.classList.toggle('done',i<s);});
+  if(s===2)buildClChecklist();
+  if(s===3)buildClFigures();
+  if(s===4)buildClReview();
+  window.scrollTo(0,0);
+}
+function clValidate(n){
+  if(n===0){if(!clState.store){toast(lang==='hi'?'दुकान चुनें':'Select a store');return false;}if(!clState.type){toast(lang==='hi'?'शीट का प्रकार चुनें':'Select sheet type');return false;}}
+  if(n===1){if(!document.getElementById('cl-manager').value){toast(lang==='hi'?'प्रबंधक का नाम चुनें':'Select manager name');return false;}if(!document.getElementById('cl-date').value){toast(lang==='hi'?'तारीख चुनें':'Select date');return false;}}
+  return true;
+}
+
+function chkItem(item,n,secKey){
+  const id=secKey+'_'+item.k;const checked=!!clState.checks[id];
+  if(item.multi){
+    const opts=item.multi.map(m=>`<label class="multi-opt"><input type="checkbox" onchange="saveMulti('${id}','${m}',this.checked)" ${(clState.checks[id]||[]).includes(m)?'checked':''}><span>${m}</span></label>`).join('');
+    return `<div class="multi-row"><span class="multi-lbl">${n}. ${t(item)}</span><div class="multi-opts">${opts}</div></div>`;
+  }
+  return `<div class="chk-item${checked?' checked':''}" onclick="toggleChk('${id}',this)" id="ci_${id}">
+    <div class="chk-box${checked?' on':''}"></div>
+    <span class="chk-label">${n}. ${t(item)}</span>
+    ${item.t?`<input type="time" class="time-inp" onclick="event.stopPropagation()" onchange="clState.times['${id}']=this.value" value="${clState.times[id]||''}">`:``}
+  </div>`;
+}
+function toggleChk(id,el){
+  clState.checks[id]=!clState.checks[id];
+  el.classList.toggle('checked',clState.checks[id]);
+  el.querySelector('.chk-box').classList.toggle('on',clState.checks[id]);
+}
+function saveMulti(id,val,checked){
+  if(!clState.checks[id])clState.checks[id]=[];
+  if(checked){if(!clState.checks[id].includes(val))clState.checks[id].push(val);}
+  else clState.checks[id]=clState.checks[id].filter(v=>v!==val);
+}
+
+function buildClChecklist(){
+  const st=clState.store; const tp=clState.type;
+  let html=''; let n=1;
+
+  function addSec(titleKey,items,col,sk){
+    let rows='';items.forEach(it=>{rows+=chkItem(it,n++,sk);});
+    const sectionLabel=titleKey.replace(/^[\d\s]+/,'').trim();
+    html+=`<div class="sec-hdr ${col} hi">${titleKey}</div><div class="sec-body">${rows}
+      <div style="padding:8px 13px;border-top:1px solid #f5f4f0;background:#fffef8">
+        <button class="task-inline-btn" onclick="addInlineTask(this.closest('.sec-body').previousElementSibling.textContent.trim(), event)">
+          📌 <span class="hi" data-hi="इस सेक्शन से टास्क जोड़ें" data-en="+ Add Task from this section">इस सेक्शन से टास्क जोड़ें</span>
+        </button>
+      </div>
+    </div><div class="spacer"></div>`;
+  }
+  function repairsSec(){
+    const cats=lang==='hi'?['फर्नीचर','कांच','बिजली','हार्डवेयर']:['Furniture','Glass','Electrical','Hardware'];
+    const keys=['furniture','glass','electrical','hardware'];
+    let cells=cats.map((cat,i)=>{const k='repair_'+keys[i];return`<div class="rep-cell"><div class="rep-cat">${cat}</div><div class="rep-opts"><input type="checkbox" onchange="clState.repairs['${k}_done']=this.checked" ${clState.repairs[k+'_done']?'checked':''}><span>${lang==='hi'?'हो गया':'Done'}</span><input type="date" onchange="clState.repairs['${k}_date']=this.value" value="${clState.repairs[k+'_date']||''}"></div></div>`;}).join('');
+    html+=`<div class="sec-hdr grey hi">${lang==='hi'?'मरम्मत और रखरखाव':'Repairs & Maintenance'}</div><div class="sec-body"><div class="repairs-grid">${cells}</div></div><div class="spacer"></div>`;
+  }
+
+  // progress
+  const totalItems=(tp==='opening'?OPEN_INFRA.length+4+(st==='VKS'?OPEN_FLOOR_VKS.length:OPEN_FLOOR_BC.length)+OPEN_INV.length:CLOSE_INFRA.length+CLOSE_BILLING.length+CLOSE_FLOOR.length+CLOSE_STAFF.length);
+  const doneCount=Object.values(clState.checks).filter(v=>v===true).length;
+  const pct=Math.round(doneCount/Math.max(totalItems,1)*100);
+  html+=`<div class="prog-wrap"><div class="prog-top"><span class="prog-title hi">${lang==='hi'?'चेकलिस्ट प्रगति':'Checklist Progress'}</span><span class="prog-pct">${pct}%</span></div><div class="prog-bg"><div class="prog-fill" style="width:${pct}%"></div></div></div>`;
+
+  if(tp==='opening'){
+    addSec(lang==='hi'?'1  बुनियादी ढांचा — चालू करें':'1  Infrastructure — Switch ON',OPEN_INFRA,'blue','infra');
+    // display board multi
+    const dbId='infra_board';
+    html+=`<div style="margin-top:-14px" class="sec-body"><div class="multi-row"><span class="multi-lbl">${ n++ }. ${lang==='hi'?'डिस्प्ले बोर्ड और साइनेज चालू':'Display boards & signage ON'}</span><div class="multi-opts"><label class="multi-opt"><input type="checkbox" onchange="saveMulti('${dbId}','${lang==="hi"?"सुबह":"Morning"}',this.checked)"><span>${lang==='hi'?'सुबह':'Morning'}</span></label><label class="multi-opt"><input type="checkbox" onchange="saveMulti('${dbId}','${lang==="hi"?"शाम":"Evening"}',this.checked)"><span>${lang==='hi'?'शाम':'Evening'}</span></label></div></div>
+    ${chkItem({k:'board_lights',hi:'बोर्ड लाइट जांची — सभी बल्ब काम कर रहे हैं',en:'Board lights checked — all bulbs working',t:false},n++,'infra')}
+    ${chkItem({k:'board_ext',hi:'रात के लिए बाहरी बोर्ड लाइट की तैयारी जांची',en:'Evening external board lights readiness checked',t:false},n++,'infra')}</div><div class="spacer"></div>`;
+    repairsSec();
+    addSec(st==='VKS'?(lang==='hi'?'3  फर्श निरीक्षण — VKS एथनिक और एक्सेसरीज़':'3  Floor — VKS Men\'s Ethnic & Accessories'):(lang==='hi'?'3  फर्श निरीक्षण और मर्चेंडाइजिंग':'3  Floor Walkthrough & Merchandising'),st==='VKS'?OPEN_FLOOR_VKS:OPEN_FLOOR_BC,'green','floor');
+    // RB multi
+    const rbId='floor_rb';
+    html+=`<div style="margin-top:-14px" class="sec-body"><div class="multi-row"><span class="multi-lbl">${n++}. ${lang==='hi'?'RB/रेनबो स्टॉक रखा':'RB/Rainbow stock placed'}</span><div class="multi-opts"><label class="multi-opt"><input type="checkbox" onchange="saveMulti('${rbId}','Sales',this.checked)"><span>${lang==='hi'?'बिक्री क्षेत्र':'Sales Area'}</span></label><label class="multi-opt"><input type="checkbox" onchange="saveMulti('${rbId}','Offer',this.checked)"><span>${lang==='hi'?'ऑफर क्षेत्र':'Offer Area'}</span></label></div></div>
+    <div class="multi-row"><span class="multi-lbl">${n++}. ${lang==='hi'?'उच्च मांग पोस्टर लगाए':'High demand posters placed'}</span><div class="multi-opts"><label class="multi-opt"><input type="checkbox" onchange="saveMulti('floor_hd','Display',this.checked)"><span>${lang==='hi'?'डिस्प्ले':'Display'}</span></label><label class="multi-opt"><input type="checkbox" onchange="saveMulti('floor_hd','Trial',this.checked)"><span>${lang==='hi'?'ट्रायल':'Trial room'}</span></label></div></div></div><div class="spacer"></div>`;
+    addSec(lang==='hi'?'4  इन्वेंट्री और बिलिंग':'4  Inventory & Billing',OPEN_INV,'orange','inv');
+
+    // ── TODAY'S IMPORTANT WORK ──────────────────────────────
+    html+=`<div class="sec-hdr gold hi">${lang==='hi'?'5  आज का महत्वपूर्ण काम और फोकस':'5  Today\'s Important Work & Focus'}</div>
+    <div class="sec-body">
+      <div style="padding:10px 13px">
+        <label style="font-size:10px;font-weight:700;color:var(--light);display:block;margin-bottom:6px" class="hi">${lang==='hi'?'आज स्टोर में क्या महत्वपूर्ण है? (लिखें)':'What is most important in store today? (write here)'}</label>
+        <textarea class="imp-work-area" rows="3"
+          placeholder="${lang==='hi'?'आज की प्राथमिकता, लक्ष्य, विशेष ध्यान देने वाले काम...':'Today\'s priorities, targets, special focus areas...'}"
+          onchange="clState.impWork=this.value">${clState.impWork||''}</textarea>
+      </div>
+    </div><div class="spacer"></div>`;
+
+    // ── STAFF PRESENT TODAY ─────────────────────────────────
+    buildStaffSection();
+    html+=`<div class="sec-hdr green hi">${lang==='hi'?'6  आज का स्टाफ — उपस्थिति, छुट्टी, बदलाव':'6  Today\'s Staff — Present, Leave & Interchange'}</div>
+    <div class="sec-body">
+      <div id="present-grid-wrap">${renderPresentStaff()}</div>
+    </div><div class="spacer"></div>
+
+    <div class="sec-hdr orange hi">${lang==='hi'?'6A  छुट्टी आवेदन':'6A  Leave Applications'}</div>
+    <div class="sec-body" id="leave-container">${renderLeaveSection()}</div>
+    <div class="spacer"></div>
+
+    <div class="sec-hdr blue hi">${lang==='hi'?'6B  स्टाफ बदलाव (दूसरे स्टोर से/को)':'6B  Staff Interchange (Other Store)'}</div>
+    <div class="sec-body" id="interchange-container">${renderInterchangeSection()}</div>
+    <div class="spacer"></div>`;
+
+    // ── MULTI-TASK ASSIGNMENT ───────────────────────────────
+    html+=`<div class="sec-hdr blue hi">${lang==='hi'?'7  स्टाफ असाइनमेंट — आज के काम':'7  Staff Assignment — Today\'s Tasks'}</div>
+    <div class="sec-body">
+      <div id="multi-task-container">${renderMultiTaskAll()}</div>
+    </div><div class="spacer"></div>`;
+
+    // ── TRAINING ────────────────────────────────────────────
+    html+=`<div class="sec-hdr teal hi">${lang==='hi'?'8  आज की ट्रेनिंग (विषय और मिनट)':'8  Today\'s Training (Subject & Minutes)'}</div>
+    <div class="sec-body" id="training-container">${renderTrainingSection()}</div>
+    <div class="spacer"></div>`;
+
+    // DIGITAL
+    html+=`<div class="sec-hdr teal hi">${lang==='hi'?'9  डिजिटल पोस्ट और सोशल मीडिया':'9  Digital Posts & Social Media'}</div>`;
+    html+=`<div class="sec-body">`;
+    html+=`<div class="dig-note hi">${lang==='hi'?'📌 हर प्लेटफॉर्म पर जो भी पोस्ट किया — टिक करें, समय और विषय लिखें':'📌 Tick what was posted, fill time & topic for each platform'}</div>`;
+    function digRow(key,label,bg,formats,tk){
+      const cbs=formats.map(f=>`<label class="multi-opt"><input type="checkbox" onchange="saveMulti('${key}','${f}',this.checked)" ${(clState.checks[key]||[]).includes(f)?'checked':''}><span>${f}</span></label>`).join('');
+      return `<div class="dig-row">
+        <div class="dig-top"><div class="dig-badge" style="background:${bg}">${label}</div><div class="dig-cbs">${cbs}</div></div>
+        <div class="dig-meta">
+          <div class="dig-meta-item"><span class="dig-meta-lbl">${lang==='hi'?'समय':'Time'}</span><input type="time" class="dig-time" onchange="clState.times['${tk}']=this.value" value="${clState.times[tk]||''}"></div>
+          <div class="dig-meta-item" style="flex:2"><span class="dig-meta-lbl">${lang==='hi'?'विषय/टॉपिक':'Topic/Caption'}</span><input type="text" class="dig-topic" placeholder="${lang==='hi'?'आज का विषय...':'Today\'s topic...'}" onchange="clState.figures['${tk}_topic']=this.value" value="${clState.figures[tk+'_topic']||''}"></div>
+        </div></div>`;
+    }
+    const fbF=lang==='hi'?['पोस्ट 📸','रील 🎬','स्टोरी 📲','लाइव 🔴','वीडियो 🎥']:['Post 📸','Reel 🎬','Story 📲','Live 🔴','Video 🎥'];
+    const igF=lang==='hi'?['पोस्ट 📸','रील 🎬','स्टोरी 📲','लाइव 🔴']:['Post 📸','Reel 🎬','Story 📲','Live 🔴'];
+    const ytF=lang==='hi'?['वीडियो 🎥','शॉर्ट्स ⚡','कम्युनिटी 📝','लाइव 🔴']:['Video 🎥','Shorts ⚡','Community 📝','Live 🔴'];
+    const gmF=lang==='hi'?['फोटो 📸','वीडियो 🎥','ऑफर अपडेट 🏷️']:['Photo 📸','Video 🎥','Offer Update 🏷️'];
+    const waF=lang==='hi'?['स्टेटस वीडियो 🎬','स्टेटस फोटो 📸','ब्रॉडकास्ट 📢']:['Status Video 🎬','Status Photo 📸','Broadcast 📢'];
+    html+=digRow('dig_fb','FACEBOOK','#1565C0',fbF,'fb_t');
+    html+=digRow('dig_ig','INSTAGRAM','#C2185B',igF,'ig_t');
+    html+=digRow('dig_yt','YOUTUBE','#B71C1C',ytF,'yt_t');
+    html+=digRow('dig_gm','GOOGLE MAP','#2E7D32',gmF,'gm_t');
+    html+=digRow('dig_wa_fmt','WHATSAPP','#1B5E20',waF,'wa_t');
+    const team=TEAMS[st];
+    html+=`<div class="dig-row"><div class="dig-top" style="flex-wrap:wrap;gap:8px"><div class="dig-badge" style="background:#1B5E20">TEAM WA</div><div class="dig-cbs">${team.map(nm=>`<label class="multi-opt"><input type="checkbox" onchange="saveMulti('dig_team','${nm}',this.checked)" ${(clState.checks['dig_team']||[]).includes(nm)?'checked':''}><span>${nm.split(' ')[0]}</span></label>`).join('')}</div></div></div>`;
+    html+=`<div class="dig-contacts">
+      <div class="dig-cnt-item"><span class="dig-meta-lbl hi">${lang==='hi'?'📱 नए संपर्क':'📱 New contacts'}</span><input type="number" class="dig-num" min="0" onchange="clState.figures.contacts=this.value" value="${clState.figures.contacts||''}"><span style="font-size:11px;color:#bbb">/ 30–50</span></div>
+      <div class="dig-cnt-item"><span class="dig-meta-lbl hi">${lang==='hi'?'🎬 वीडियो/रील आज':'🎬 Videos/reels today'}</span><input type="number" class="dig-num" min="0" onchange="clState.figures.total_videos=this.value" value="${clState.figures.total_videos||''}"></div>
+    </div>`;
+    html+=`<div class="dig-note-area"><span class="dig-meta-lbl hi">${lang==='hi'?'📝 कंटेंट नोट्स':'📝 Content notes'}</span><textarea class="dig-textarea" onchange="clState.figures.content_note=this.value" placeholder="${lang==='hi'?'कौन सा वीडियो बना, कल क्या बनाना है...':'Which video made, what to create tomorrow...'}">${clState.figures.content_note||''}</textarea></div>`;
+    // WA GROUP additions
+    html+=`<div style="background:#e8f5e9;border-top:1px solid #c8e6c9;padding:8px 13px">
+      <div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:6px" class="hi">📲 ${lang==='hi'?'WA ग्रुप में जोड़े गए ग्राहक:':'Customers Added to WA Group:'}</div>
+      <div id="wa-group-container">${renderWAGroups()}</div>
+    </div>`;
+    html+=`</div><div class="spacer"></div>`;
+
+  } else {
+    addSec(lang==='hi'?'1  बुनियादी ढांचा — बंद करें':'1  Infrastructure — Switch OFF',CLOSE_INFRA,'grey','cinfra');
+    const dbOff='cinfra_board';
+    html+=`<div style="margin-top:-14px" class="sec-body"><div class="multi-row"><span class="multi-lbl">${n++}. ${lang==='hi'?'डिस्प्ले बोर्ड':'Display boards'}</span><div class="multi-opts"><label class="multi-opt"><input type="checkbox" onchange="saveMulti('${dbOff}','OFF',this.checked)"><span style="color:var(--red)">${lang==='hi'?'अंदर बंद':'Internal OFF'}</span></label><label class="multi-opt"><input type="checkbox" onchange="saveMulti('${dbOff}','ON',this.checked)"><span style="color:var(--green)">${lang==='hi'?'बाहर चालू (रात)':'External ON (night)'}</span></label></div></div></div><div class="spacer"></div>`;
+    addSec(lang==='hi'?'2  बिक्री और बिलिंग':'2  Sales & Billing',CLOSE_BILLING,'blue','cbill');
+    addSec(lang==='hi'?'3  फर्श और माल':'3  Floor & Merchandise',CLOSE_FLOOR,'green','cfloor');
+    addSec(lang==='hi'?'4  स्टाफ और सुरक्षा':'4  Staff & Security',CLOSE_STAFF,'purple','cstaff');
+
+    // EOD TASK SUMMARY
+    html+=`<div class="sec-hdr" style="background:#1B5E20;margin-top:14px"><span class="hi">${lang==='hi'?'5  आज का काम — पूरा vs बाकी (कैटेगरी अनुसार)':'5  Today\'s Work — Done vs Pending (Category-wise)'}</span></div>
+    <div class="sec-body">
+      <div class="eod-summary-wrap">
+        <div id="eod-summary-content">
+          <div style="text-align:center;padding:16px;color:var(--light);font-size:12px" class="hi">
+            ${lang==='hi'?'Opening चेकलिस्ट के असाइनमेंट यहाँ दिखेंगे। Staff tasks tick करें।':'Opening assignment tasks will appear here. Tick staff tasks as done.'}
+          </div>
+        </div>
+        <button class="btn" style="width:100%;margin-top:8px;font-size:12px" onclick="updateEODSummary()">
+          🔄 ${lang==='hi'?'स्थिति अपडेट करें':'Refresh Status'}
+        </button>
+      </div>
+    </div><div class="spacer"></div>`;
+  }
+
+  // ASSIGNMENTS
+  const team=TEAMS[st||'BC'];
+  const statusOpts=['done','pending','na'].map(s=>`<option value="${s}">${lang==='hi'?{done:'हो गया',pending:'लंबित',na:'लागू नहीं'}[s]:s}</option>`).join('');
+  let asgnRows=team.map((nm,i)=>{const k='asgn_'+i;return`<div class="asgn-row ${i%2===0?'':''}"><div class="asgn-name">${nm}</div><input type="text" placeholder="${lang==='hi'?'काम...':'Task...'}" onchange="clState.assignments['${k}_task']=this.value" value="${clState.assignments[k+'_task']||''}"><select onchange="clState.assignments['${k}_status']=this.value">${statusOpts}</select></div>`;}).join('');
+  html+=`<div class="sec-hdr green hi">${lang==='hi'?(tp==='opening'?'10  पुरानी असाइनमेंट स्थिति':'5  स्टाफ असाइनमेंट'):(tp==='opening'?'10  Old Assignment Status':'5  Staff Assignments')}</div>
+    <div class="sec-body"><div class="asgn-hdr hi"><span>${lang==='hi'?'स्टाफ':'Staff'}</span><span>${lang==='hi'?'काम':'Task'}</span><span>${lang==='hi'?'स्थिति':'Status'}</span></div>${asgnRows}</div><div class="spacer"></div>`;
+
+  // CLOSING EXTRAS
+  if(tp==='closing'){
+    html+=`<div class="sec-hdr red hi">${lang==='hi'?'6  मुख्य समापन आंकड़े':'6  Key Vital Closing Figures'}</div><div class="sec-body"><div class="kv-wrap">`;
+    FIGURES.forEach(grp=>{
+      html+=`<div class="kv-sub ${grp.col}">${grp.sub}</div><div class="kv-grid ${grp.g}">`;
+      grp.items.forEach(it=>{html+=`<div class="kv-tile"><label class="hi">${t(it)}</label><input type="number" min="0" onchange="clState.figures['${it.k}']=this.value" value="${clState.figures[it.k]||''}"></div>`;});
+      html+=`</div>`;
+    });
+    html+=`</div></div><div class="spacer"></div>`;
+
+    const pBadges=lang==='hi'?['#1 जरूर करें','#2 करना चाहिए','#3 कर सकते हैं']:['#1 MUST DO','#2 SHOULD DO','#3 COULD DO'];
+    html+=`<div class="sec-hdr gold hi">${lang==='hi'?'7  प्राथमिकताएं — कल के काम':'7  Priorities — Next Day'}</div><div class="sec-body">`;
+    pBadges.forEach((b,i)=>{html+=`<div class="pri-item"><div class="pri-badge p${i+1}">${b}</div><input class="pri-task" type="text" placeholder="${lang==='hi'?'काम लिखें...':'Write task...'}" onchange="clState.priorities[${i}]=this.value" value="${clState.priorities[i]||''}"><div class="pri-assign"><label>${lang==='hi'?'सौंपा गया:':'Assigned to:'}</label><input type="text" placeholder="${lang==='hi'?'नाम...':'Name...'}" onchange="clState.priAssign[${i}]=this.value" value="${clState.priAssign[i]||''}"></div></div>`;});
+    html+=`</div><div class="spacer"></div>`;
+  }
+
+  // NOTES
+  html+=`<div class="sec-hdr gold hi">${lang==='hi'?'प्रबंधक समीक्षा नोट्स':'Manager Review Notes'}</div><div class="sec-body"><div class="notes-wrap"><label class="hi">${lang==='hi'?'समस्याएं / कार्रवाई / फॉलो-अप':'Issues / Action / Follow-up'}</label><textarea onchange="clState.mgrNotes=this.value" placeholder="${lang==='hi'?'यहाँ लिखें...':'Write here...'}">${clState.mgrNotes}</textarea></div></div><div class="spacer"></div>`;
+  html+=`<div class="sec-hdr blue hi">${lang==='hi'?'रणनीतिक समीक्षा (मालिक/ओनर)':'Strategic Review (Owner)'}</div><div class="sec-body"><div class="notes-wrap"><label>${lang==='hi'?'रणनीतिक अवलोकन / निर्देश':'Strategic Observations / Directives'}</label><textarea onchange="clState.rsNotes=this.value" placeholder="${lang==='hi'?'रणनीतिकार नोट्स...':'Strategist notes...'}">${clState.rsNotes}</textarea></div></div><div class="spacer"></div>`;
+
+  document.getElementById('cl-checklist-body').innerHTML=html;
+}
+
+function buildClFigures(){
+  // Step 3 shows only assignment + figures summary (already built in step 2 dynamically)
+  // Show a summary card here instead
+  const st=clState.store||'BC';
+  const team=TEAMS[st];
+  const checked=Object.values(clState.checks).filter(v=>v===true||Array.isArray(v)&&v.length>0).length;
+  document.getElementById('cl-figures-body').innerHTML=`<div class="card" style="margin-top:2px">
+    <div class="card-title hi">${lang==='hi'?'सारांश — अभी तक':'Summary so far'}</div>
+    <div class="sum-row"><span class="sum-key hi">${lang==='hi'?'दुकान':'Store'}</span><span class="sum-val">${clState.store||'—'}</span></div>
+    <div class="sum-row"><span class="sum-key hi">${lang==='hi'?'प्रकार':'Type'}</span><span class="sum-val hi">${clState.type==='opening'?(lang==='hi'?'उद्घाटन':'Opening'):(lang==='hi'?'समापन':'Closing')}</span></div>
+    <div class="sum-row"><span class="sum-key hi">${lang==='hi'?'प्रबंधक':'Manager'}</span><span class="sum-val">${document.getElementById('cl-manager')?.value||'—'}</span></div>
+    <div class="sum-row"><span class="sum-key hi">${lang==='hi'?'टिक किए आइटम':'Items Checked'}</span><span class="sum-val" style="color:var(--green)">${checked} ✓</span></div>
+    ${clState.type==='closing'&&clState.figures.bills?`<div class="sum-row"><span class="sum-key hi">${lang==='hi'?'बने बिल':'Bills'}</span><span class="sum-val">${clState.figures.bills}</span></div>`:''}
+  </div>
+  <div style="background:var(--gold-light);border:1px solid var(--gold);border-radius:10px;padding:12px;font-size:12px;line-height:1.7">
+    ${lang==='hi'?'✅ अगले स्टेप में जमा करने से पहले समीक्षा करें।':'✅ Review your submission in the next step before submitting.'}
+  </div>`;
+}
+
+function buildClReview(){
+  const mgr=document.getElementById('cl-manager')?.value||'';
+  const date=document.getElementById('cl-date')?.value||'';
+  const time=document.getElementById('cl-time')?.value||'';
+  const checked=Object.values(clState.checks).filter(v=>v===true||Array.isArray(v)&&v.length>0).length;
+  document.getElementById('cl-review-body').innerHTML=`<div class="card" style="margin-top:2px">
+    <div class="card-title hi">${lang==='hi'?'अंतिम समीक्षा':'Final Review'}</div>
+    <div class="sum-row"><span class="sum-key">Store</span><span class="sum-val">${clState.store||'—'}</span></div>
+    <div class="sum-row"><span class="sum-key">Type</span><span class="sum-val hi">${clState.type}</span></div>
+    <div class="sum-row"><span class="sum-key">Manager</span><span class="sum-val">${mgr}</span></div>
+    <div class="sum-row"><span class="sum-key">Date</span><span class="sum-val">${date}</span></div>
+    <div class="sum-row"><span class="sum-key">Time</span><span class="sum-val">${time}</span></div>
+    <div class="sum-row"><span class="sum-key">Checked items</span><span class="sum-val" style="color:var(--green)">${checked} ✓</span></div>
+    ${clState.mgrNotes?`<div class="sum-row"><span class="sum-key">Mgr Notes</span><span class="sum-val" style="font-size:11px;max-width:60%">${clState.mgrNotes.substring(0,80)}...</span></div>`:''}
+  </div>
+  <div style="background:var(--gold-light);border:1px solid var(--gold);border-radius:10px;padding:12px;font-size:12px;line-height:1.7;margin-bottom:4px">
+    ${lang==='hi'?'✅ जमा करने पर यह डेटा Google Sheets में सहेजा जाएगा।':'✅ On submission, data will be saved to Google Sheets.'}
+  </div>`;
+}
+
+async function clSubmit(){
+  const mgr=document.getElementById('cl-manager')?.value||'';
+  const date=document.getElementById('cl-date')?.value||'';
+  const time=document.getElementById('cl-time')?.value||'';
+  const sup=document.getElementById('cl-supervisor')?.value||'';
+  const fb=document.getElementById('cl-filledby')?.value||'';
+  document.getElementById('cl-s4').style.display='none';
+  document.getElementById('cl-loading').style.display='block';
+  const payload={type_:'checklist',store:clState.store,sheetType:clState.type,manager:mgr,date,time,supervisor:sup,filledBy:fb,
+    checks:JSON.stringify(clState.checks),times:JSON.stringify(clState.times),repairs:JSON.stringify(clState.repairs),
+    figures:JSON.stringify(clState.figures),assignments:JSON.stringify(clState.assignments),
+    priorities:JSON.stringify(clState.priorities),priAssign:JSON.stringify(clState.priAssign),
+    mgrNotes:clState.mgrNotes,rsNotes:clState.rsNotes,submittedAt:new Date().toISOString()};
+  await sendToSheets(payload);
+  document.getElementById('cl-loading').style.display='none';
+  document.getElementById('cl-success').style.display='block';
+  const checked=Object.values(clState.checks).filter(v=>v===true||Array.isArray(v)&&v.length>0).length;
+  document.getElementById('cl-success-msg').textContent=`${clState.store} ${clState.type} — ${mgr} — ${date}`;
+  document.getElementById('cl-success-summary').innerHTML=`<div class="sum-row"><span class="sum-key">Store</span><span class="sum-val">${clState.store}</span></div><div class="sum-row"><span class="sum-key">Items checked</span><span class="sum-val" style="color:var(--green)">${checked} ✓</span></div>${clState.figures.bills?`<div class="sum-row"><span class="sum-key">Bills</span><span class="sum-val">${clState.figures.bills}</span></div>`:''}`;
+}
+function clReset(){
+  clState={store:null,type:null,step:0,checks:{},times:{},repairs:{},figures:{},assignments:{},priorities:['','',''],priAssign:['','',''],mgrNotes:'',rsNotes:''};
+  document.getElementById('cl-loading').style.display='none';
+  document.getElementById('cl-success').style.display='none';
+  document.getElementById('cl-s4').style.display='';
+  document.querySelectorAll('.sel-card').forEach(c=>c.classList.remove('selected'));
+  clRenderStep();
+}
+
+// ══════════════════════════════════════════════════════
+// ATTENDANCE TAB
+// ══════════════════════════════════════════════════════
+function renderAttendance(){
+  const store=document.getElementById('att-store')?.value||'BC';
+  const team=TEAMS[store];
+  let html='';
+  team.forEach((name,i)=>{
+    const key='att_'+name;
+    if(!attState[key])attState[key]={status:'present',timeIn:'',lunchOut:'',lunchIn:'',timeOut:'',remark:''};
+    const s=attState[key];
+    const pills=STATUS_OPTIONS.map(o=>`<button class="att-status-pill${s.status===o.key?' '+o.key:''}" onclick="attSetStatus('${key}','${o.key}',this)">${t(o)}</button>`).join('');
+    html+=`<div class="att-row">
+      <div class="att-staff-name">👤 ${name}</div>
+      <div class="att-status-pills">${pills}</div>
+      <div class="att-times">
+        <div class="att-time-field">
+          <label>${lang==='hi'?'समय आने का':'Time In'}</label>
+          <input type="time" value="${s.timeIn}" onchange="attState['${key}'].timeIn=this.value">
+        </div>
+        <div class="att-time-field">
+          <label>${lang==='hi'?'समय जाने का':'Time Out'}</label>
+          <input type="time" value="${s.timeOut}" onchange="attState['${key}'].timeOut=this.value">
+        </div>
+        <div class="att-time-field lunch">
+          <label>🍽️ ${lang==='hi'?'लंच बाहर':'Lunch Out'}</label>
+          <input type="time" value="${s.lunchOut}" onchange="attState['${key}'].lunchOut=this.value">
+        </div>
+        <div class="att-time-field lunch">
+          <label>🍽️ ${lang==='hi'?'लंच वापस':'Lunch In'}</label>
+          <input type="time" value="${s.lunchIn}" onchange="attState['${key}'].lunchIn=this.value">
+        </div>
+      </div>
+      <input class="att-remark" type="text" placeholder="${lang==='hi'?'टिप्पणी (देर का कारण, आधी छुट्टी का कारण...)':'Remark (reason for late, half-day...)'}" value="${s.remark}" onchange="attState['${key}'].remark=this.value">
+    </div>`;
+  });
+  const wrap=document.getElementById('att-rows-wrap');
+  if(wrap) wrap.innerHTML=html;
+  updateAttSummary();
+  updateAttReportStatus();
+}
+
+function attSetStatus(key,status,btn){
+  attState[key].status=status;
+  const row=btn.closest('.att-row');
+  row.querySelectorAll('.att-status-pill').forEach(b=>b.className='att-status-pill');
+  btn.classList.add(status);
+  updateAttSummary();
+}
+
+function updateAttSummary(){
+  const counts={present:0,absent:0,late:0,halfday:0};
+  Object.values(attState).forEach(s=>{ if(counts[s.status]!==undefined) counts[s.status]++; });
+  document.getElementById('att-sum-present').textContent=counts.present;
+  document.getElementById('att-sum-absent').textContent=counts.absent;
+  document.getElementById('att-sum-late').textContent=counts.late;
+  document.getElementById('att-sum-half').textContent=counts.halfday;
+}
+
+function updateAttReportStatus(){
+  const el=document.getElementById('att-reports-submitted');
+  if(!el) return;
+  const today=new Date().toISOString().slice(0,10);
+  const todayReps=allReports.filter(r=>r.date===today&&r.type_==='attendance');
+  el.innerHTML=todayReps.length>0
+    ? todayReps.map(r=>`✅ ${r.store} — ${r.manager} — ${r.submittedAt?.slice(11,16)||''}`).join('<br>')
+    : `<span style="color:var(--light)">${lang==='hi'?'आज कोई उपस्थिति जमा नहीं हुई।':'No attendance submitted today yet.'}</span>`;
+}
+
+async function attSubmit(){
+  const store=document.getElementById('att-store').value;
+  const date=document.getElementById('att-date').value;
+  const sup=document.getElementById('att-supervisor').value;
+  if(!date){toast(lang==='hi'?'तारीख चुनें':'Select date');return;}
+  document.getElementById('att-rows-wrap').style.display='none';
+  document.getElementById('att-loading').style.display='block';
+  const payload={type_:'attendance',store,date,supervisor:sup,attendance:JSON.stringify(attState),submittedAt:new Date().toISOString()};
+  await sendToSheets(payload);
+  document.getElementById('att-loading').style.display='none';
+  document.getElementById('att-success').style.display='block';
+  document.getElementById('att-success-msg').textContent=`${store} — ${date}`;
+}
+function attReset(){
+  attState={};
+  document.getElementById('att-rows-wrap').style.display='';
+  document.getElementById('att-loading').style.display='none';
+  document.getElementById('att-success').style.display='none';
+  renderAttendance();
+}
+
+// ══════════════════════════════════════════════════════
+// REPORTS TAB
+// ══════════════════════════════════════════════════════
+let pinUnlocked=false;
+function initReports(){
+  if(pinUnlocked){document.getElementById('pin-screen').style.display='none';document.getElementById('reports-screen').style.display='block';loadReports();}
+}
+function pinCheck(val){
+  if(val.length<4)return;
+  if(val===OWNER_PIN){pinUnlocked=true;document.getElementById('pin-screen').style.display='none';document.getElementById('reports-screen').style.display='block';loadReports();}
+  else{document.getElementById('pin-error').textContent=lang==='hi'?'❌ गलत PIN':'❌ Wrong PIN';document.getElementById('pin-input').value='';}
+}
+
+async function loadReports(){
+  const listEl=document.getElementById('rep-list');
+  const loadEl=document.getElementById('rep-loading');
+  listEl.innerHTML='';
+  loadEl.style.display='block';
+  try{
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){
+      await new Promise(r=>setTimeout(r,800));
+      allReports=getDemoReports();
+    } else {
+      const res=await fetch(SCRIPT_URL+'?action=getReports');
+      const data=await res.json();
+      allReports=data.records||[];
+    }
+    loadEl.style.display='none';
+    filterReports();
+    updateAttReportStatus();
+  } catch(e){
+    loadEl.style.display='none';
+    listEl.innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div>${lang==='hi'?'डेटा लोड नहीं हो सका। Apps Script URL जांचें।':'Could not load data. Check Apps Script URL.'}</div>`;
+  }
+}
+
+function filterReports(){
+  const store=document.getElementById('rep-store-filter').value;
+  const date=document.getElementById('rep-date-filter').value;
+  const type=document.getElementById('rep-type-filter').value;
+  const today=new Date().toISOString().slice(0,10);
+  let filtered=allReports.filter(r=>{
+    if(store&&r.store!==store)return false;
+    if(date&&r.date!==date)return false;
+    if(type&&r.type_!==type&&r.sheetType!==type)return false;
+    return true;
+  });
+  // update stats
+  document.getElementById('rep-total').textContent=allReports.length;
+  document.getElementById('rep-today').textContent=allReports.filter(r=>r.date===today).length;
+  document.getElementById('rep-bc').textContent=allReports.filter(r=>r.store==='BC').length;
+  document.getElementById('rep-vks').textContent=allReports.filter(r=>r.store==='VKS').length;
+  // render cards
+  if(filtered.length===0){
+    document.getElementById('rep-list').innerHTML=`<div class="empty-state"><div class="empty-icon">📭</div>${lang==='hi'?'कोई रिपोर्ट नहीं मिली':'No reports found'}</div>`;
+    return;
+  }
+  document.getElementById('rep-list').innerHTML=filtered.map((r,idx)=>{
+    const isAtt=r.type_==='attendance';
+    const typeBadge=isAtt?'attendance':(r.sheetType||r.type_||'');
+    const checked=r.checks?Object.values(JSON.parse(r.checks||'{}')).filter(v=>v===true||Array.isArray(v)&&v.length>0).length:0;
+    let detailHtml='';
+    if(isAtt){
+      try{const att=JSON.parse(r.attendance||'{}');
+        detailHtml=Object.entries(att).map(([k,v])=>`<div class="rep-att-row"><span>${k.replace('att_','')}</span><span class="rep-type-badge ${v.status}">${v.status}</span><span style="font-size:11px;color:var(--mid)">${v.timeIn||'—'} → ${v.timeOut||'—'}${v.lunchOut?` | L: ${v.lunchOut}–${v.lunchIn}`:''}${v.remark?` | ${v.remark}`:''}</span></div>`).join('');
+      }catch(e){detailHtml='<span style="font-size:12px;color:var(--light)">—</span>';}
+    } else {
+      const figs=r.figures?JSON.parse(r.figures):null;
+      detailHtml=`<div class="rep-detail-grid">
+        <div class="rep-detail-row"><span class="rep-detail-lbl">Manager</span><span class="rep-detail-val">${r.manager||'—'}</span></div>
+        <div class="rep-detail-row"><span class="rep-detail-lbl">Filled by</span><span class="rep-detail-val">${r.filledBy||'—'}</span></div>
+        <div class="rep-detail-row"><span class="rep-detail-lbl">Items checked</span><span class="rep-detail-val" style="color:var(--green)">${checked} ✓</span></div>
+        <div class="rep-detail-row"><span class="rep-detail-lbl">Supervisor</span><span class="rep-detail-val">${r.supervisor||'—'}</span></div>
+        ${figs&&figs.bills?`<div class="rep-detail-row"><span class="rep-detail-lbl">Bills made</span><span class="rep-detail-val">${figs.bills}</span></div>`:''}
+        ${figs&&figs.walkin?`<div class="rep-detail-row"><span class="rep-detail-lbl">Walk-ins</span><span class="rep-detail-val">${figs.walkin}</span></div>`:''}
+        ${figs&&figs.review?`<div class="rep-detail-row"><span class="rep-detail-lbl">Google reviews</span><span class="rep-detail-val">${figs.review}</span></div>`:''}
+      </div>
+      ${r.mgrNotes?`<div style="margin-top:8px;font-size:11.5px;background:#fff;border:1px solid #eee;border-radius:6px;padding:8px"><b style="color:var(--mid)">Manager notes:</b> ${r.mgrNotes}</div>`:''}
+      ${r.figures?renderVitalsInReport(JSON.parse(r.figures||'{}')):''}`;
+    }
+    return `<div class="rep-card">
+      <div class="rep-card-hdr" onclick="toggleRepDetail(${idx})">
+        <div class="rep-card-left">
+          <div class="rep-card-title">${r.store||'—'} — ${r.manager||r.supervisor||'—'}</div>
+          <div class="rep-card-sub">${r.date||'—'} ${r.time?'@ '+r.time:''} ${r.submittedAt?'• '+r.submittedAt.slice(11,16)+'':''}</div>
+        </div>
+        <div class="rep-card-right">
+          <div class="rep-type-badge ${typeBadge}">${typeBadge}</div>
+          ${!isAtt?`<div class="rep-pct">${checked} ✓</div>`:''}
+        </div>
+      </div>
+      <div class="rep-detail" id="rd-${idx}"><div class="rep-att-grid">${detailHtml}</div></div>
+    </div>`;
+  }).join('');
+}
+
+function toggleRepDetail(idx){
+  const el=document.getElementById('rd-'+idx);
+  el.classList.toggle('open');
+}
+
+function getDemoReports(){
+  const today=new Date().toISOString().slice(0,10);
+  return[
+    {type_:'checklist',sheetType:'opening',store:'BC',manager:'Ramu',date:today,time:'10:05',supervisor:'Neel',filledBy:'Employee',checks:'{"infra_lights":true,"infra_floor":true,"infra_brooms":true,"floor_walkthrough":true,"floor_sections":true,"inv_erp":true}',figures:'{"contacts":"12","total_videos":"2"}',mgrNotes:'Display area needs cleaning.',submittedAt:today+'T10:12:00'},
+    {type_:'checklist',sheetType:'closing',store:'BC',manager:'Sikander',date:today,time:'21:00',supervisor:'Neel',filledBy:'Manager',checks:'{"cinfra_lights":true,"cinfra_floor":true,"cbill_erp":true,"cbill_cash":true,"cbill_upi":true}',figures:'{"bills":"18","items":"47","repeat":"5","newcust":"13","walkin":"28","review":"2"}',mgrNotes:'Good day. 18 bills.',submittedAt:today+'T21:10:00'},
+    {type_:'checklist',sheetType:'opening',store:'VKS',manager:'Kundan',date:today,time:'10:10',supervisor:'Neel',filledBy:'Employee',checks:'{"infra_lights":true,"infra_floor":true,"floor_ethnic":true,"floor_kids":true}',figures:'{}',mgrNotes:'',submittedAt:today+'T10:15:00'},
+    {type_:'attendance',store:'BC',date:today,supervisor:'Neel',attendance:'{"att_Ramu":{"status":"present","timeIn":"10:00","timeOut":"21:00","lunchOut":"13:30","lunchIn":"14:15","remark":""},"att_Sikander":{"status":"present","timeIn":"10:05","timeOut":"21:00","lunchOut":"13:45","lunchIn":"14:30","remark":""},"att_Abhishek":{"status":"late","timeIn":"11:30","timeOut":"21:00","lunchOut":"","lunchIn":"","remark":"Late — bike puncture"},"att_Bijay":{"status":"present","timeIn":"10:00","timeOut":"21:00","lunchOut":"13:30","lunchIn":"14:30","remark":""},"att_Kesri":{"status":"halfday","timeIn":"10:00","timeOut":"14:00","lunchOut":"","lunchIn":"","remark":"Doctor visit"},"att_Krishna":{"status":"absent","timeIn":"","timeOut":"","lunchOut":"","lunchIn":"","remark":"Sick leave"}}',submittedAt:today+'T10:20:00'},
+  ];
+}
+
+// ══════════════════════════════════════════════════════
+// SHEETS SUBMISSION
+// ══════════════════════════════════════════════════════
+async function sendToSheets(payload){
+  try{
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){
+      await new Promise(r=>setTimeout(r,1200)); return null;
+    }
+    const form=new FormData();
+    Object.entries(payload).forEach(([k,v])=>{ if(v!==undefined&&v!==null) form.append(k,String(v)); });
+    // Use no-cors for regular data (checklist, attendance, etc.)
+    await fetch(SCRIPT_URL,{method:'POST',body:form,mode:'no-cors'});
+    return null;
+  }catch(e){ console.error('sendToSheets error:',e); return null; }
+}
+
+// ── Re-compress image ────────────────────────────────────────────
+function recompressImage(base64, maxW, quality){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const ratio=Math.min(maxW/img.width,maxW/img.height,1);
+      canvas.width=Math.round(img.width*ratio);
+      canvas.height=Math.round(img.height*ratio);
+      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+      resolve(canvas.toDataURL('image/jpeg',quality));
+    };
+    img.onerror=()=>resolve(base64);
+    img.src=base64;
+  });
+}
+
+// ── Upload photo to Drive — 2-step reliable method ───────────────
+// Step 1: POST photo via no-cors (guaranteed to reach Apps Script)
+// Step 2: GET the link back via separate GET request after delay
+async function uploadPhotoToDrive(base64Data, category, store, date, by, staffName, groomGrade, groomChecks){
+  try{
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') return '';
+    if(!base64Data || base64Data.length<100) return '';
+
+    // Compress: 250px, 45% quality → ~10-20KB
+    const compressed = await recompressImage(base64Data, 250, 0.45);
+
+    // STEP 1 — POST photo (no-cors, fire & forget — reaches Apps Script reliably)
+    const form=new FormData();
+    form.append('type_',       'photo_upload');
+    form.append('photo',       compressed);
+    form.append('store',       store||'BC');
+    form.append('date',        date||todayStr2());
+    form.append('category',    category);
+    form.append('by',          by||'Unknown');
+    form.append('staffName',   staffName||'');
+    form.append('captureTime', new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}));
+    form.append('submittedAt', new Date().toISOString());
+    if(groomGrade)  form.append('groomGrade',  groomGrade);
+    if(groomChecks) form.append('groomChecks', JSON.stringify(groomChecks));
+
+    await fetch(SCRIPT_URL, {method:'POST', body:form, mode:'no-cors'});
+
+    // STEP 2 — Wait 4 seconds for Apps Script to save to Drive, then GET the link
+    await new Promise(r=>setTimeout(r, 4000));
+    const getUrl = SCRIPT_URL + '?action=getPhotoLink' +
+      '&store='    + encodeURIComponent(store) +
+      '&date='     + encodeURIComponent(date) +
+      '&category=' + encodeURIComponent(category) +
+      '&staffName='+ encodeURIComponent(staffName||'');
+
+    try{
+      const res  = await fetch(getUrl, {method:'GET', redirect:'follow'});
+      const text = await res.text();
+      const data = JSON.parse(text);
+      return data.url || '';
+    }catch(getErr){
+      console.warn('Could not retrieve link (CORS/network):', getErr);
+      // Return folder link as fallback
+      return await getDriveFolderLink(store, date);
+    }
+
+  }catch(e){
+    console.error('uploadPhotoToDrive error:',e);
+    return '';
+  }
+}
+
+// ── Get Drive folder link for the day ────────────────────────────
+async function getDriveFolderLink(store, date){
+  try{
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') return '';
+    const url = SCRIPT_URL+'?action=getFolderLink&store='+
+      encodeURIComponent(store)+'&date='+encodeURIComponent(date);
+    const res  = await fetch(url, {method:'GET', redirect:'follow'});
+    const data = await res.json();
+    return data.url || '';
+  }catch(e){ return ''; }
+}
+
+// ══════════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════════
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+
+
+// ══════════════════════════════════════════════════════
+// TASK MANAGEMENT SYSTEM
+// ══════════════════════════════════════════════════════
+
+const TASK_KEY = 'be_tasks_v1';
+let currentTaskFilter = 'all';
+let ownerStoreFilter  = 'BC';
+let modalContext      = null; // checklist item context if opened from inline
+
+// ── STORAGE ──
+function loadTasks(){ try{ return JSON.parse(localStorage.getItem(TASK_KEY)||'[]'); }catch(e){return[];} }
+function saveTasks(tasks){ localStorage.setItem(TASK_KEY, JSON.stringify(tasks)); }
+function todayStr2(){ return new Date().toISOString().slice(0,10); }
+
+// ── AUTO CARRY FORWARD (runs on app init + tasks tab open) ──
+function carryForwardTasks(){
+  const today = todayStr2();
+  let tasks = loadTasks();
+  let changed = false;
+  tasks = tasks.map(t => {
+    // If task is pending and due date is in the past — mark as carried
+    if(t.status === 'pending' && t.date !== today && !t.carried){
+      t.carried = true;
+      t.carriedFrom = t.date;
+      t.date = today; // move to today
+      changed = true;
+    }
+    return t;
+  });
+  if(changed) saveTasks(tasks);
+}
+
+// ── TASK VIEW SWITCH ──
+function setTaskView(view){
+  document.getElementById('task-view-my').style.display    = view==='my'    ? '' : 'none';
+  document.getElementById('task-view-owner').style.display = view==='owner' ? '' : 'none';
+  document.getElementById('trb-my').classList.toggle('active',   view==='my');
+  document.getElementById('trb-owner').classList.toggle('active', view==='owner');
+  if(view==='owner') renderOwnerTasks();
+  else renderMyTasks();
+}
+
+// ── OWNER STORE FILTER ──
+function setOwnerStore(s){
+  ownerStoreFilter = s;
+  ['BC','VKS','ALL'].forEach(x => document.getElementById('ost-'+x.toLowerCase()).classList.toggle('active', x===s));
+  populateOwnerMgrFilter();
+  renderOwnerTasks();
+}
+
+function populateOwnerMgrFilter(){
+  const sel = document.getElementById('owner-mgr-filter');
+  const current = sel.value;
+  const tasks = loadTasks();
+  const mgrs = [...new Set(tasks.filter(t => ownerStoreFilter==='ALL' || t.store===ownerStoreFilter).map(t=>t.addedBy).filter(Boolean))];
+  sel.innerHTML = '<option value="">सभी / All Managers</option>' + mgrs.map(m=>`<option value="${m}" ${m===current?'selected':''}>${m}</option>`).join('');
+}
+
+// ── RENDER MY TASKS ──
+function renderMyTasks(){
+  const who = document.getElementById('task-whoami')?.value || '';
+  const today = todayStr2();
+  let tasks = loadTasks().filter(t => t.date === today || t.carried);
+
+  // count for badges
+  const pending  = tasks.filter(t=>t.status==='pending').length;
+  const urgent   = tasks.filter(t=>t.status==='pending'&&t.priority==='urgent').length;
+  const done     = tasks.filter(t=>t.status==='done').length;
+  const carried  = tasks.filter(t=>t.carried&&t.status==='pending').length;
+  document.getElementById('ts-pending').textContent = pending;
+  document.getElementById('ts-urgent').textContent  = urgent;
+  document.getElementById('ts-done').textContent    = done;
+  document.getElementById('ts-carried').textContent = carried;
+  updateTaskCounts();
+
+  // Filter by who
+  if(who) tasks = tasks.filter(t => t.assignedTo===who || t.addedBy===who);
+
+  // Filter by currentTaskFilter
+  if(currentTaskFilter==='urgent')  tasks = tasks.filter(t=>t.priority==='urgent'&&t.status==='pending');
+  if(currentTaskFilter==='pending') tasks = tasks.filter(t=>t.status==='pending');
+  if(currentTaskFilter==='done')    tasks = tasks.filter(t=>t.status==='done');
+  if(currentTaskFilter==='carried') tasks = tasks.filter(t=>t.carried&&t.status==='pending');
+
+  // Sort: urgent first, then normal, then low, done last
+  const priOrder = {urgent:0, normal:1, low:2};
+  tasks.sort((a,b)=>{
+    if(a.status==='done' && b.status!=='done') return 1;
+    if(b.status==='done' && a.status!=='done') return -1;
+    return (priOrder[a.priority]||1)-(priOrder[b.priority]||1);
+  });
+
+  const el = document.getElementById('my-task-list');
+  if(tasks.length===0){
+    el.innerHTML=`<div class="empty-tasks"><div class="empty-tasks-icon">🎉</div><div class="hi">${lang==='hi'?'कोई टास्क नहीं!':'No tasks!'}</div></div>`;
+    return;
+  }
+
+  el.innerHTML = tasks.map(t => renderTaskCard(t, 'my')).join('');
+}
+
+// ── RENDER OWNER TASKS ──
+function renderOwnerTasks(){
+  populateOwnerMgrFilter();
+  const storeF = ownerStoreFilter;
+  const mgrF   = document.getElementById('owner-mgr-filter')?.value || '';
+  const today  = todayStr2();
+  let tasks    = loadTasks().filter(t => t.date===today || t.carried);
+
+  if(storeF !== 'ALL') tasks = tasks.filter(t => t.store===storeF);
+  if(mgrF)             tasks = tasks.filter(t => t.addedBy===mgrF);
+
+  // Owner stats
+  const totalP  = tasks.filter(t=>t.status==='pending').length;
+  const totalD  = tasks.filter(t=>t.status==='done').length;
+  const totalU  = tasks.filter(t=>t.priority==='urgent'&&t.status==='pending').length;
+  document.getElementById('owner-task-stats').innerHTML=`
+    <div class="task-stat"><div class="task-stat-num">${totalP}</div><div class="task-stat-lbl hi" data-hi="बाकी" data-en="Pending">बाकी</div></div>
+    <div class="task-stat red"><div class="task-stat-num">${totalU}</div><div class="task-stat-lbl hi" data-hi="अत्यावश्यक" data-en="Urgent">अत्यावश्यक</div></div>
+    <div class="task-stat green"><div class="task-stat-num">${totalD}</div><div class="task-stat-lbl hi" data-hi="पूरे" data-en="Done">पूरे</div></div>`;
+
+  // Group by assignedTo
+  const groups = {};
+  tasks.forEach(t => {
+    const key = t.assignedTo || 'Unassigned';
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(t);
+  });
+
+  // Sort group keys: Owner first, then manager, then staff
+  const sortedKeys = Object.keys(groups).sort((a,b)=>{
+    if(a.includes('Neel')||a.includes('Owner')) return -1;
+    if(b.includes('Neel')||b.includes('Owner')) return 1;
+    if(a==='Manager') return -1;
+    if(b==='Manager') return 1;
+    return a.localeCompare(b);
+  });
+
+  const el = document.getElementById('owner-task-list');
+  if(sortedKeys.length===0){
+    el.innerHTML=`<div class="empty-tasks"><div class="empty-tasks-icon">📭</div><div class="hi">${lang==='hi'?'कोई टास्क नहीं':'No tasks found'}</div></div>`;
+    return;
+  }
+
+  el.innerHTML = sortedKeys.map(key => {
+    const groupTasks = groups[key];
+    const priOrder={urgent:0,normal:1,low:2};
+    groupTasks.sort((a,b)=>{
+      if(a.status==='done'&&b.status!=='done') return 1;
+      if(b.status==='done'&&a.status!=='done') return -1;
+      return (priOrder[a.priority]||1)-(priOrder[b.priority]||1);
+    });
+    const pending = groupTasks.filter(t=>t.status==='pending').length;
+    const done    = groupTasks.filter(t=>t.status==='done').length;
+    return `
+      <div class="owner-assignee-hdr">
+        <div class="owner-assignee-name">👤 ${key}</div>
+        <div class="owner-assignee-counts">
+          ${pending>0?`<span class="owner-assignee-count pending">${pending} बाकी</span>`:''}
+          ${done>0?`<span class="owner-assignee-count done">${done} पूरे</span>`:''}
+        </div>
+      </div>
+      <div class="owner-assignee-group">${groupTasks.map(t=>renderTaskCard(t,'owner')).join('')}</div>`;
+  }).join('');
+}
+
+// ── RENDER SINGLE TASK CARD ──
+function renderTaskCard(t, view){
+  const isDone     = t.status==='done';
+  const priClass   = isDone?'done-card':(t.priority||'normal')+'-card';
+  const carriedBadge = t.carried?`<span class="task-badge badge-carried">📌 ${t.carriedFrom?'from '+t.carriedFrom:lang==='hi'?'कैरी':'Carried'}</span>`:'';
+  const dueBadge   = `<span class="task-badge badge-due">${t.due==='today'?(lang==='hi'?'आज':'Today'):t.due==='tomorrow'?(lang==='hi'?'कल':'Tomorrow'):(lang==='hi'?'इस हफ्ते':'This Week')}</span>`;
+  const storeBadge = `<span class="task-badge badge-store">${t.store||'—'}</span>`;
+  const priBadge   = `<span class="task-badge ${t.priority==='urgent'?'badge-urgent':t.priority==='low'?'badge-low':'badge-normal'}">${t.priority==='urgent'?'🔴':t.priority==='low'?'🟢':'🟡'} ${t.priority||'normal'}</span>`;
+  const assignBadge = view==='owner'?`<span class="task-badge badge-assign">→ ${t.assignedTo||'—'}</span>`:'';
+  const addedByBadge = view==='owner'&&t.addedBy?`<span class="task-badge badge-assign">by ${t.addedBy}</span>`:'';
+  const sourceStrip = t.source?`<div class="task-from-strip">📋 ${t.source}</div>`:'';
+
+  return `<div class="task-card ${priClass}${isDone?' done-card':''}" id="tc_${t.id}">
+    <div class="task-card-top">
+      <div class="task-cb${isDone?' done':''}" onclick="toggleTaskDone('${t.id}')"></div>
+      <div class="task-card-body">
+        <div class="task-desc${isDone?' done-text':''}">${t.desc}</div>
+        <div class="task-meta">${priBadge}${dueBadge}${storeBadge}${assignBadge}${addedByBadge}${carriedBadge}</div>
+      </div>
+    </div>
+    ${sourceStrip}
+    <div class="task-card-actions">
+      ${!isDone?`<button class="task-action-btn" onclick="editTaskDue('${t.id}')">${lang==='hi'?'📅 डेड्लाइन बदलें':'📅 Change Due'}</button>`:''}
+      ${!isDone?`<button class="task-action-btn" onclick="reassignTask('${t.id}')">${lang==='hi'?'👤 बदलें':'👤 Reassign'}</button>`:''}
+      <button class="task-action-btn red-btn" onclick="deleteTask('${t.id}')">${lang==='hi'?'🗑️ हटाएं':'🗑️ Delete'}</button>
+    </div>
+  </div>`;
+}
+
+// ── TASK ACTIONS ──
+function toggleTaskDone(id){
+  let tasks = loadTasks();
+  tasks = tasks.map(t => t.id===id ? {...t, status: t.status==='done'?'pending':'done', doneAt: t.status!=='done'?new Date().toISOString():null} : t);
+  saveTasks(tasks);
+  renderMyTasks();
+  if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
+  updateTaskCounts();
+}
+
+function deleteTask(id){
+  if(!confirm(lang==='hi'?'इस टास्क को हटाएं?':'Delete this task?')) return;
+  saveTasks(loadTasks().filter(t=>t.id!==id));
+  renderMyTasks();
+  if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
+  updateTaskCounts();
+}
+
+function editTaskDue(id){
+  const opts=['today','tomorrow','this_week'];
+  const lbls=lang==='hi'?['आज','कल','इस हफ्ते']:['Today','Tomorrow','This Week'];
+  const choice=prompt(`${lang==='hi'?'नई डेड्लाइन चुनें:':'Choose new due:'} ${lbls.map((l,i)=>i+1+'. '+l).join(', ')}`);
+  const idx=parseInt(choice)-1;
+  if(isNaN(idx)||idx<0||idx>2) return;
+  let tasks=loadTasks();
+  tasks=tasks.map(t=>t.id===id?{...t,due:opts[idx]}:t);
+  saveTasks(tasks);
+  renderMyTasks();
+  if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
+}
+
+function reassignTask(id){
+  const allPeople=['Manager','Owner (Neel)',...TEAMS.BC,...TEAMS.VKS];
+  const choice=prompt(`${lang==='hi'?'किसको सौंपें? नाम लिखें:':'Reassign to? Type name:'} (${allPeople.join(', ')})`);
+  if(!choice||!choice.trim()) return;
+  let tasks=loadTasks();
+  tasks=tasks.map(t=>t.id===id?{...t,assignedTo:choice.trim()}:t);
+  saveTasks(tasks);
+  renderMyTasks();
+  if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
+}
+
+// ── QUICK ADD / MODAL ──
+function openQuickAdd(source){
+  modalContext = source || null;
+  const modal  = document.getElementById('task-modal');
+  const fromEl = document.getElementById('modal-from-label');
+  if(source){ fromEl.textContent='📋 From: '+source; fromEl.classList.add('show'); }
+  else { fromEl.classList.remove('show'); }
+  // pre-fill store from current checklist store
+  const storeInp = document.getElementById('task-store-input');
+  if(clState.store) storeInp.value = clState.store;
+  modal.classList.add('open');
+  setTimeout(()=>document.getElementById('task-desc-input').focus(),200);
+}
+function closeModal(e){
+  if(e===null || e.target===document.getElementById('task-modal')){
+    document.getElementById('task-modal').classList.remove('open');
+    document.getElementById('task-desc-input').value='';
+    modalContext=null;
+  }
+}
+
+function saveTask(){
+  const desc   = document.getElementById('task-desc-input').value.trim();
+  const assign = document.getElementById('task-assign-input').value;
+  const store  = document.getElementById('task-store-input').value;
+  const pri    = document.getElementById('task-priority-input').value;
+  const due    = document.getElementById('task-due-input').value;
+  const by     = document.getElementById('task-addedby-input').value;
+  if(!desc){ toast(lang==='hi'?'टास्क लिखें':'Write the task'); return; }
+  const task = {
+    id: Date.now().toString(),
+    desc, assignedTo:assign, store, priority:pri,
+    due, addedBy:by, status:'pending',
+    date: todayStr2(), source: modalContext||'',
+    carried:false, carriedFrom:null, doneAt:null,
+    createdAt: new Date().toISOString()
+  };
+  const tasks = loadTasks();
+  tasks.push(task);
+  saveTasks(tasks);
+  document.getElementById('task-modal').classList.remove('open');
+  document.getElementById('task-desc-input').value='';
+  modalContext=null;
+  updateTaskCounts();
+  toast(lang==='hi'?'✅ टास्क जोड़ा गया':'✅ Task added');
+  // If tasks tab is open, re-render
+  if(document.getElementById('tab-tasks').classList.contains('active')){
+    renderMyTasks();
+    if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
+  }
+}
+
+// ── FILTER MY TASKS ──
+function filterMyTasks(filter, btn){
+  currentTaskFilter=filter;
+  document.querySelectorAll('.task-filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderMyTasks();
+}
+
+// ── COUNT BADGE UPDATE ──
+function updateTaskCounts(){
+  const today=todayStr2();
+  const tasks=loadTasks();
+  const todayTasks=tasks.filter(t=>t.date===today||t.carried);
+  document.getElementById('my-task-count').textContent  = todayTasks.filter(t=>t.status==='pending').length;
+  document.getElementById('all-task-count').textContent = todayTasks.length;
+}
+
+// ── INLINE TASK BUTTON (added after each checklist section) ──
+function addInlineTask(sectionName, event){
+  event.stopPropagation();
+  openQuickAdd(sectionName);
+}
+
+
+
+// ══════════════════════════════════════════════════════
+// STAFF PRESENT + MULTI-TASK + TRAINING + WA GROUP + EOD SUMMARY
+// ══════════════════════════════════════════════════════
+
+// ── A. STAFF PRESENT (who is in store today) ──────────
+// stored in clState.presentStaff = ['Ramu','Sikander',...]
+// clState.staffTasks = { 'Ramu': [{desc,pri,done},...], ... }
+// clState.training   = { 'Ramu': {subject,mins,result}, ... }
+// clState.waGroups   = [{group,count,from,to}, ...]
+// clState.impWork    = '' (today's important work note)
+
+function buildStaffSection(){
+  const store = clState.store || 'BC';
+  const all   = TEAMS[store];
+  if(!clState.presentStaff)   clState.presentStaff=all.slice();
+  if(!clState.staffTasks)     clState.staffTasks={};
+  if(!clState.training)       clState.training={};
+  if(!clState.waGroups)       clState.waGroups=[{group:'',count:'',from:'',to:''}];
+  if(!clState.impWork)        clState.impWork='';
+  if(!clState.leaveApps)      clState.leaveApps=[];      // leave applications
+  if(!clState.interchanges)   clState.interchanges=[];   // staff interchanges [{from,to,name}]
+  all.forEach(nm=>{ if(!clState.staffTasks[nm]) clState.staffTasks[nm]=[{desc:'',pri:'normal',done:false}]; });
+  all.forEach(nm=>{ if(!clState.training[nm])   clState.training[nm]={subject:'',mins:'',result:''}; });
+}
+
+// ── STAFF COUNT BAR ─────────────────────────────────────
+function getStaffCounts(){
+  const store=clState.store||'BC';
+  const all=TEAMS[store];
+  const onLeave=(clState.leaveApps||[]).filter(l=>l.granted==='yes').map(l=>l.name);
+  const interchange=(clState.interchanges||[]);
+  const incoming=interchange.filter(i=>i.to===store).map(i=>i.name);
+  const outgoing=interchange.filter(i=>i.from===store).map(i=>i.name);
+  const base=all.length;
+  const present=(clState.presentStaff||[]).filter(n=>!onLeave.includes(n)).length + incoming.length;
+  const absent=all.filter(n=>!(clState.presentStaff||[]).includes(n)).length;
+  return {base,present,onLeave:onLeave.length,incoming:incoming.length,outgoing:outgoing.length,absent};
+}
+
+function renderStaffCountBar(){
+  const c=getStaffCounts();
+  return `<div class="staff-count-bar">
+    <div class="staff-count-box"><div class="staff-count-num green">${c.present}</div><div class="staff-count-lbl hi">${lang==='hi'?'उपस्थित':'Present'}</div></div>
+    <div class="staff-count-box"><div class="staff-count-num red">${c.absent}</div><div class="staff-count-lbl hi">${lang==='hi'?'अनुपस्थित':'Absent'}</div></div>
+    <div class="staff-count-box"><div class="staff-count-num orange">${c.onLeave}</div><div class="staff-count-lbl hi">${lang==='hi'?'छुट्टी पर':'On Leave'}</div></div>
+    <div class="staff-count-box"><div class="staff-count-num blue">${c.incoming}</div><div class="staff-count-lbl hi">${lang==='hi'?'बदलाव से आए':'Interchange In'}</div></div>
+  </div>`;
+}
+
+// ── RENDER PRESENT STAFF GRID (upgraded) ────────────────
+function renderPresentStaff(){
+  buildStaffSection();
+  const store=clState.store||'BC';
+  const all=TEAMS[store];
+  const onLeave=(clState.leaveApps||[]).filter(l=>l.granted==='yes').map(l=>l.name);
+  const interchange=(clState.interchanges||[]);
+  const incoming=interchange.filter(i=>i.to===store);
+  const incomingNames=incoming.map(i=>i.name);
+
+  let cards=all.map(nm=>{
+    const isOnLeave=onLeave.includes(nm);
+    const sel=(clState.presentStaff||[]).includes(nm)&&!isOnLeave;
+    let cls='present-card';
+    let statusTxt='';
+    if(isOnLeave){cls+=' on-leave';statusTxt=lang==='hi'?'🏖️ छुट्टी पर':'🏖️ On Leave';}
+    else if(sel){statusTxt=lang==='hi'?'✅ उपस्थित':'✅ Present';}
+    else{statusTxt=lang==='hi'?'❌ अनुपस्थित':'❌ Absent';}
+    return `<div class="${cls}${sel&&!isOnLeave?' selected':''}" onclick="${isOnLeave?'':'togglePresent(\''+nm+'\',this)'}">
+      <div class="present-name">${nm}</div>
+      <div class="present-status">${statusTxt}</div>
+    </div>`;
+  }).join('');
+
+  // Interchange-in staff (from other store)
+  if(incomingNames.length>0){
+    incomingNames.forEach(nm=>{
+      const sel=(clState.presentStaff||[]).includes(nm);
+      cards+=`<div class="present-card interchange${sel?' selected':''}" onclick="togglePresent('${nm}',this)" title="Interchange from other store">
+        <div class="present-name">🔄 ${nm}</div>
+        <div class="present-status">${sel?(lang==='hi'?'✅ आए हुए':'✅ In-store'):(lang==='hi'?'❌ नहीं आए':'❌ Not here')}</div>
+      </div>`;
+    });
+  }
+
+  return renderStaffCountBar() + `<div class="present-grid">${cards}</div>`;
+}
+
+function togglePresent(name, el){
+  if(!clState.presentStaff) clState.presentStaff=[];
+  const idx=clState.presentStaff.indexOf(name);
+  if(idx>=0) clState.presentStaff.splice(idx,1);
+  else clState.presentStaff.push(name);
+  const sel=clState.presentStaff.includes(name);
+  el.classList.toggle('selected',sel);
+  const isIn=el.classList.contains('interchange');
+  el.querySelector('.present-status').textContent=
+    sel?(isIn?(lang==='hi'?'✅ आए हुए':'✅ In-store'):(lang==='hi'?'✅ उपस्थित':'✅ Present'))
+       :(isIn?(lang==='hi'?'❌ नहीं आए':'❌ Not here'):(lang==='hi'?'❌ अनुपस्थित':'❌ Absent'));
+  // refresh count bar + multi-task
+  const countBar=document.querySelector('.staff-count-bar');
+  if(countBar) countBar.outerHTML=renderStaffCountBar();
+  const mt=document.getElementById('multi-task-container');
+  if(mt) mt.innerHTML=renderMultiTaskAll();
+}
+
+// ── LEAVE APPLICATIONS ──────────────────────────────────
+function renderLeaveSection(){
+  buildStaffSection();
+  const store=clState.store||'BC';
+  const allStaff=[...TEAMS.BC,...TEAMS.VKS];
+  const leaves=clState.leaveApps||[];
+
+  const cards=leaves.map((l,i)=>{
+    const grantedCls=l.granted==='yes'?'granted':l.granted==='no'?'denied':'pending';
+    const grantedTxt=l.granted==='yes'?(lang==='hi'?'✅ स्वीकृत':'✅ Granted'):l.granted==='no'?(lang==='hi'?'❌ अस्वीकृत':'❌ Denied'):(lang==='hi'?'⏳ लंबित':'⏳ Pending');
+    return `<div class="leave-card">
+      <div class="leave-card-hdr">
+        <span class="leave-card-name">🙏 ${l.name||lang==='hi'?'नाम चुनें':'Select Name'}</span>
+        <span class="leave-badge ${grantedCls}">${grantedTxt}</span>
+      </div>
+      <div class="leave-card-body">
+        <div class="leave-field">
+          <label>${lang==='hi'?'कर्मचारी का नाम':'Staff Name'}</label>
+          <select onchange="updateLeave(${i},'name',this.value);refreshPresentGrid()">
+            <option value="">-- ${lang==='hi'?'चुनें':'Select'} --</option>
+            ${allStaff.map(nm=>`<option value="${nm}" ${l.name===nm?'selected':''}>${nm}</option>`).join('')}
+          </select>
+        </div>
+        <div class="leave-field">
+          <label>${lang==='hi'?'छुट्टी का प्रकार':'Leave Type'}</label>
+          <select onchange="updateLeave(${i},'type',this.value)">
+            <option value="sick"    ${l.type==='sick'?'selected':''}>${lang==='hi'?'बीमारी':'Sick Leave'}</option>
+            <option value="casual"  ${l.type==='casual'?'selected':''}>${lang==='hi'?'आकस्मिक':'Casual Leave'}</option>
+            <option value="personal"${l.type==='personal'?'selected':''}>${lang==='hi'?'व्यक्तिगत':'Personal Leave'}</option>
+            <option value="halfday" ${l.type==='halfday'?'selected':''}>${lang==='hi'?'अर्धकालिक':'Half Day'}</option>
+            <option value="planned" ${l.type==='planned'?'selected':''}>${lang==='hi'?'योजनाबद्ध':'Planned Leave'}</option>
+          </select>
+        </div>
+        <div class="leave-field">
+          <label>${lang==='hi'?'से तारीख':'From Date'}</label>
+          <input type="date" value="${l.from||''}" onchange="updateLeave(${i},'from',this.value)">
+        </div>
+        <div class="leave-field">
+          <label>${lang==='hi'?'तक तारीख':'To Date'}</label>
+          <input type="date" value="${l.to||''}" onchange="updateLeave(${i},'to',this.value)">
+        </div>
+        <div class="leave-field" style="grid-column:1/-1">
+          <label>${lang==='hi'?'कारण':'Reason'}</label>
+          <textarea placeholder="${lang==='hi'?'छुट्टी का कारण...':'Reason for leave...'}" onchange="updateLeave(${i},'reason',this.value)">${l.reason||''}</textarea>
+        </div>
+        <div class="leave-grant-row">
+          <span style="font-size:12px;font-weight:700;color:var(--mid)">${lang==='hi'?'छुट्टी स्वीकृत?':'Leave Granted?'}</span>
+          <button class="grant-btn yes${l.granted==='yes'?' active':''}" onclick="grantLeave(${i},'yes')">✅ ${lang==='hi'?'हाँ':'Yes'}</button>
+          <button class="grant-btn no${l.granted==='no'?' active':''}"  onclick="grantLeave(${i},'no')">❌ ${lang==='hi'?'नहीं':'No'}</button>
+          <button onclick="removeLeave(${i})" style="background:none;border:none;color:#ccc;font-size:18px;cursor:pointer;padding:0 6px">🗑️</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return (leaves.length===0
+    ? `<div style="padding:16px;text-align:center;font-size:12px;color:var(--light)" class="hi">${lang==='hi'?'कोई छुट्टी आवेदन नहीं। नीचे + से जोड़ें।':'No leave applications. Add below.'}</div>`
+    : cards) +
+    `<button class="add-leave-btn" onclick="addLeave()">🙏 + ${lang==='hi'?'नया छुट्टी आवेदन जोड़ें':'Add Leave Application'}</button>`;
+}
+
+function addLeave(){
+  if(!clState.leaveApps) clState.leaveApps=[];
+  clState.leaveApps.push({name:'',type:'casual',from:'',to:'',reason:'',granted:'pending'});
+  document.getElementById('leave-container').innerHTML=renderLeaveSection();
+}
+function updateLeave(i,field,val){
+  clState.leaveApps[i][field]=val;
+  if(field==='granted') refreshPresentGrid();
+}
+function grantLeave(i,val){
+  clState.leaveApps[i].granted=val;
+  document.getElementById('leave-container').innerHTML=renderLeaveSection();
+  refreshPresentGrid();
+}
+function removeLeave(i){
+  clState.leaveApps.splice(i,1);
+  document.getElementById('leave-container').innerHTML=renderLeaveSection();
+  refreshPresentGrid();
+}
+
+// ── INTERCHANGE ─────────────────────────────────────────
+function renderInterchangeSection(){
+  buildStaffSection();
+  const store=clState.store||'BC';
+  const otherStore=store==='BC'?'VKS':'BC';
+  const allStaff={BC:TEAMS.BC, VKS:TEAMS.VKS};
+  const ixs=clState.interchanges||[];
+
+  const rows=ixs.map((ix,i)=>`
+    <div class="interchange-row">
+      <select class="interchange-sel" onchange="updateInterchange(${i},'name',this.value);refreshPresentGrid()">
+        <option value="">-- ${lang==='hi'?'कर्मचारी':'Staff'} --</option>
+        ${[...TEAMS.BC,...TEAMS.VKS].map(nm=>`<option value="${nm}" ${ix.name===nm?'selected':''}>${nm}</option>`).join('')}
+      </select>
+      <span class="interchange-arrow">${ix.from===store?'→':'←'}</span>
+      <select class="interchange-sel" onchange="updateInterchange(${i},'direction',this.value);refreshPresentGrid()">
+        <option value="in"  ${ix.to===store?'selected':''}>${lang==='hi'?`${otherStore} से आए`:`From ${otherStore}`}</option>
+        <option value="out" ${ix.from===store?'selected':''}>${lang==='hi'?`${otherStore} गए`:`To ${otherStore}`}</option>
+      </select>
+      <button class="interchange-del" onclick="removeInterchange(${i})">×</button>
+    </div>`).join('');
+
+  const summary=ixs.length>0?`<div style="padding:4px 0 8px;font-size:11px;color:var(--blue)">
+    ${ixs.filter(i=>i.to===store&&i.name).map(i=>`✅ ${i.name} (${i.from||'?'} → ${store})`).join(' | ')}
+    ${ixs.filter(i=>i.from===store&&i.name).map(i=>`❌ ${i.name} (${store} → ${i.to||'?'})`).join(' | ')}
+  </div>`:'';
+
+  return `<div class="interchange-card">
+    <div class="interchange-hdr">🔄 ${lang==='hi'?`${store} ↔ ${otherStore} स्टाफ बदलाव`:`${store} ↔ ${otherStore} Staff Interchange`}</div>
+    ${summary}
+    ${rows||`<div style="font-size:12px;color:var(--blue);padding-bottom:8px">${lang==='hi'?'कोई बदलाव नहीं। नीचे + से जोड़ें।':'No interchange. Add below.'}</div>`}
+  </div>
+  <button class="add-interchange-btn" onclick="addInterchange()">🔄 + ${lang==='hi'?'स्टाफ बदलाव जोड़ें':'Add Staff Interchange'}</button>`;
+}
+
+function addInterchange(){
+  if(!clState.interchanges) clState.interchanges=[];
+  const store=clState.store||'BC';
+  clState.interchanges.push({name:'',from:store==='BC'?'VKS':'BC',to:store,direction:'in'});
+  document.getElementById('interchange-container').innerHTML=renderInterchangeSection();
+}
+function updateInterchange(i,field,val){
+  const store=clState.store||'BC';
+  const otherStore=store==='BC'?'VKS':'BC';
+  if(field==='direction'){
+    clState.interchanges[i].from=val==='in'?otherStore:store;
+    clState.interchanges[i].to  =val==='in'?store:otherStore;
+  } else {
+    clState.interchanges[i][field]=val;
+  }
+}
+function removeInterchange(i){
+  clState.interchanges.splice(i,1);
+  document.getElementById('interchange-container').innerHTML=renderInterchangeSection();
+  refreshPresentGrid();
+}
+
+function refreshPresentGrid(){
+  const el=document.getElementById('present-grid-wrap');
+  if(el) el.innerHTML=renderPresentStaff();
+  const mt=document.getElementById('multi-task-container');
+  if(mt) mt.innerHTML=renderMultiTaskAll();
+}
+
+// ── B. MULTI-TASK per staff ────────────────────────────
+function renderMultiTaskAll(){
+  const present=clState.presentStaff||[];
+  if(present.length===0) return `<div style="padding:14px;text-align:center;font-size:12px;color:var(--light)">${lang==='hi'?'ऊपर से उपस्थित कर्मचारी चुनें':'Select present staff above'}</div>`;
+  return present.map(nm=>renderMultiTaskStaff(nm)).join('');
+}
+
+function renderMultiTaskStaff(nm){
+  const tasks=clState.staffTasks[nm]||[{desc:'',pri:'normal',done:false}];
+  const rows=tasks.map((t,i)=>`
+    <div class="multi-task-item" id="mti_${nm}_${i}">
+      <div class="multi-task-num">${i+1}</div>
+      <div class="multi-task-cb${t.done?' on':''}" onclick="toggleStaffTaskDone('${nm}',${i})"></div>
+      <input class="multi-task-inp" type="text" placeholder="${lang==='hi'?'काम/टास्क लिखें...':'Write task...'}"
+        value="${(t.desc||'').replace(/"/g,'&quot;')}"
+        onchange="updateStaffTask('${nm}',${i},'desc',this.value)">
+      <select class="multi-task-pri" onchange="updateStaffTask('${nm}',${i},'pri',this.value)">
+        <option value="urgent" ${t.pri==='urgent'?'selected':''}>🔴</option>
+        <option value="normal" ${t.pri==='normal'||!t.pri?'selected':''}>🟡</option>
+        <option value="low"    ${t.pri==='low'?'selected':''}>🟢</option>
+      </select>
+      <button class="multi-task-del" onclick="removeStaffTask('${nm}',${i})">×</button>
+    </div>`).join('');
+  return `<div class="multi-task-wrap">
+    <div class="multi-task-staff-hdr">
+      <span class="multi-task-staff-name">👤 ${nm}</span>
+      <button class="multi-task-add-btn" onclick="addStaffTask('${nm}')">+ ${lang==='hi'?'काम जोड़ें':'Add Task'}</button>
+    </div>
+    ${rows}
+  </div>`;
+}
+
+function addStaffTask(nm){
+  if(!clState.staffTasks[nm]) clState.staffTasks[nm]=[];
+  clState.staffTasks[nm].push({desc:'',pri:'normal',done:false});
+  const c=document.getElementById('multi-task-container');
+  if(c) c.innerHTML=renderMultiTaskAll();
+}
+function removeStaffTask(nm,idx){
+  if(clState.staffTasks[nm].length<=1){clState.staffTasks[nm]=[{desc:'',pri:'normal',done:false}];}
+  else clState.staffTasks[nm].splice(idx,1);
+  const c=document.getElementById('multi-task-container');
+  if(c) c.innerHTML=renderMultiTaskAll();
+}
+function updateStaffTask(nm,idx,field,val){
+  if(!clState.staffTasks[nm]) return;
+  if(!clState.staffTasks[nm][idx]) return;
+  clState.staffTasks[nm][idx][field]=val;
+}
+function toggleStaffTaskDone(nm,idx){
+  clState.staffTasks[nm][idx].done=!clState.staffTasks[nm][idx].done;
+  const cb=document.querySelector(`#mti_${nm}_${idx} .multi-task-cb`);
+  if(cb) cb.classList.toggle('on', clState.staffTasks[nm][idx].done);
+  updateEODSummary();
+}
+
+// ── C. EOD SUMMARY (category-wise completion) ─────────
+function getEODSummary(){
+  const all=clState.staffTasks||{};
+  const cats={urgent:{done:0,pending:0},normal:{done:0,pending:0},low:{done:0,pending:0}};
+  const byStaff={};
+  Object.entries(all).forEach(([nm,tasks])=>{
+    let sd=0,sp=0;
+    (tasks||[]).forEach(t=>{
+      if(!t.desc) return;
+      const c=cats[t.pri]||cats.normal;
+      if(t.done){c.done++;sd++;}else{c.pending++;sp++;}
+    });
+    byStaff[nm]={done:sd,pending:sp};
+  });
+  return {cats,byStaff};
+}
+function updateEODSummary(){
+  const el=document.getElementById('eod-summary-content');
+  if(!el) return;
+  const {cats,byStaff}=getEODSummary();
+  const catLabels={urgent:{hi:'🔴 अत्यावश्यक',en:'🔴 Urgent'},normal:{hi:'🟡 सामान्य',en:'🟡 Normal'},low:{hi:'🟢 कम',en:'🟢 Low'}};
+  let html=Object.entries(cats).map(([k,v])=>{
+    if(v.done+v.pending===0) return '';
+    return `<div class="eod-cat-row">
+      <span class="eod-cat-name">${catLabels[k][lang]}</span>
+      <div class="eod-badges">
+        ${v.done>0?`<span class="eod-done-badge">✅ ${v.done} ${lang==='hi'?'पूरे':'done'}</span>`:''}
+        ${v.pending>0?`<span class="eod-pend-badge">⏳ ${v.pending} ${lang==='hi'?'बाकी':'pending'}</span>`:''}
+      </div>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  // staff-wise
+  html += '<div style="height:8px"></div>';
+  Object.entries(byStaff).forEach(([nm,v])=>{
+    if(v.done+v.pending===0) return;
+    html+=`<div class="eod-cat-row">
+      <span class="eod-cat-name">👤 ${nm}</span>
+      <div class="eod-badges">
+        ${v.done>0?`<span class="eod-done-badge">${v.done} ✅</span>`:''}
+        ${v.pending>0?`<span class="eod-pend-badge">${v.pending} ⏳</span>`:''}
+      </div>
+    </div>`;
+  });
+
+  // carry forward note
+  const pendingTasks=[];
+  Object.entries(clState.staffTasks||{}).forEach(([nm,tasks])=>{
+    (tasks||[]).forEach(t=>{if(t.desc&&!t.done) pendingTasks.push({nm,desc:t.desc,pri:t.pri});});
+  });
+  if(pendingTasks.length>0){
+    html+=`<div class="eod-carry-note">📌 <b>${lang==='hi'?'कल के लिए कैरी फॉरवर्ड:':'Carry Forward to Tomorrow:'}</b><br>
+      ${pendingTasks.map(p=>`${p.nm}: ${p.desc} (${p.pri})`).join('<br>')}`;
+    // Auto-add to task system
+    html+=`<br><button class="btn gold" style="margin-top:8px;font-size:11px;padding:6px 14px" onclick="autoCarryToTaskTab()">
+      ✅ ${lang==='hi'?'टास्क टैब में जोड़ें':'Add to Tasks Tab'}
+    </button></div>`;
+  }
+
+  el.innerHTML=html||`<div style="text-align:center;padding:16px;color:var(--light);font-size:12px">${lang==='hi'?'अभी कोई टास्क नहीं':'No tasks yet'}</div>`;
+}
+
+function autoCarryToTaskTab(){
+  const tasks=loadTasks();
+  const today=todayStr2();
+  let added=0;
+  Object.entries(clState.staffTasks||{}).forEach(([nm,ts])=>{
+    (ts||[]).forEach(t=>{
+      if(t.desc&&!t.done){
+        tasks.push({id:Date.now()+Math.random().toString(36).slice(2),
+          desc:t.desc, assignedTo:nm, store:clState.store||'BC',
+          priority:t.pri||'normal', due:'tomorrow',
+          addedBy:document.getElementById('cl-manager')?.value||'Manager',
+          status:'pending', date:today, source:'Opening Assignment',
+          carried:false, carriedFrom:null, doneAt:null,
+          createdAt:new Date().toISOString()});
+        added++;
+      }
+    });
+  });
+  saveTasks(tasks);
+  toast(`✅ ${added} ${lang==='hi'?'टास्क टैब में जोड़े गए':'tasks added to Tasks tab'}`);
+  updateTaskCounts();
+}
+
+// ── D. TRAINING ────────────────────────────────────────
+function renderTrainingSection(){
+  const present=clState.presentStaff||[];
+  if(!clState.training) clState.training={};
+  if(present.length===0) return `<div style="padding:14px;text-align:center;font-size:12px;color:var(--light)">${lang==='hi'?'पहले उपस्थित कर्मचारी चुनें':'Select present staff first'}</div>`;
+  return `<div style="padding:8px 13px;font-size:10px;font-weight:700;color:var(--light);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #f5f4f0">
+      <span style="flex:1">${lang==='hi'?'कर्मचारी':'Staff'}</span>
+    </div>` +
+    present.map(nm=>{
+      const tr=clState.training[nm]||{subject:'',mins:'',result:''};
+      return `<div class="training-row">
+        <div class="training-staff">👤 ${nm}</div>
+        <input class="training-mins" type="number" min="0" placeholder="${lang==='hi'?'मिनट':'Mins'}"
+          value="${tr.mins}" onchange="clState.training['${nm}'].mins=this.value" title="Duration in minutes">
+        <input class="training-inp" type="text" placeholder="${lang==='hi'?'विषय — परिणाम...':'Subject — Result...'}"
+          value="${(tr.subject+(tr.result?' → '+tr.result:''))}" 
+          onchange="clState.training['${nm}'].subject=this.value">
+      </div>`;
+    }).join('');
+}
+
+// ── E. WA GROUPS ───────────────────────────────────────
+function renderWAGroups(){
+  if(!clState.waGroups||!clState.waGroups.length) clState.waGroups=[{group:'',count:'',from:'',to:''}];
+  const rows=clState.waGroups.map((g,i)=>`
+    <div class="wa-group-row">
+      <input type="text"  placeholder="${lang==='hi'?'WA ग्रुप का नाम':'WA Group Name'}"
+        value="${g.group}" onchange="clState.waGroups[${i}].group=this.value">
+      <input type="number" placeholder="${lang==='hi'?'संख्या':'Count'}" min="0"
+        value="${g.count}" onchange="clState.waGroups[${i}].count=this.value">
+      <input type="date" value="${g.from}" onchange="clState.waGroups[${i}].from=this.value" title="From date">
+      <input type="date" value="${g.to}"   onchange="clState.waGroups[${i}].to=this.value"   title="To date">
+    </div>`).join('');
+  const hdr=`<div class="wa-group-row" style="background:#f5f5f5;border-bottom:1px solid #eee">
+    <span style="font-size:10px;font-weight:700;color:var(--light)">${lang==='hi'?'ग्रुप नाम':'Group Name'}</span>
+    <span style="font-size:10px;font-weight:700;color:var(--light)">${lang==='hi'?'संख्या':'Count'}</span>
+    <span style="font-size:10px;font-weight:700;color:var(--light)">${lang==='hi'?'से':'From'}</span>
+    <span style="font-size:10px;font-weight:700;color:var(--light)">${lang==='hi'?'तक':'To'}</span>
+  </div>`;
+  return hdr + rows +
+    `<button class="wa-add-btn" onclick="addWAGroup()">+ ${lang==='hi'?'और ग्रुप जोड़ें':'Add Another Group'}</button>`;
+}
+function addWAGroup(){
+  clState.waGroups.push({group:'',count:'',from:'',to:''});
+  const el=document.getElementById('wa-group-container');
+  if(el) el.innerHTML=renderWAGroups();
+}
+
+// ── F. KEY VITALS → REPORTS connection ────────────────
+function renderVitalsInReport(figs){
+  if(!figs) return '';
+  const vitals=[
+    {k:'bills',   hi:'बने बिल',      en:'Bills Made'},
+    {k:'items',   hi:'आइटम बेचे',    en:'Items Sold'},
+    {k:'repeat',  hi:'दोबारा ग्राहक', en:'Repeat Customers'},
+    {k:'newcust', hi:'नए ग्राहक',    en:'New Customers'},
+    {k:'walkin',  hi:'वॉक-इन',       en:'Walk-ins'},
+    {k:'rbsold',  hi:'RB स्टॉक',     en:'RB Stock Sold'},
+    {k:'review',  hi:'गूगल रिव्यू',  en:'Google Reviews'},
+    {k:'coupon',  hi:'कूपन',         en:'Coupons'},
+    {k:'waviews', hi:'WA व्यूज़',    en:'WA Views'},
+    {k:'wareply', hi:'WA जवाब',      en:'WA Replies'},
+    {k:'fbreply', hi:'FB जवाब',      en:'FB Replies'},
+    {k:'instreply',hi:'IG जवाब',     en:'IG Replies'},
+  ];
+  const tiles=vitals.filter(v=>figs[v.k]).map(v=>`
+    <div class="rep-vital-tile">
+      <div class="rep-vital-lbl">${v[lang]||v.hi}</div>
+      <div class="rep-vital-val">${figs[v.k]}</div>
+    </div>`).join('');
+  return tiles ? `<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--light);margin-bottom:6px">${lang==='hi'?'मुख्य आंकड़े':'Key Figures'}</div><div class="rep-vitals-grid">${tiles}</div></div>` : '';
+}
+
+
+// ══════════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════════
+function calcAvgValues(){
+  const bills = parseFloat(document.querySelector('[onchange*="bills"]')?.value || clState.figures.bills || 0);
+  const items  = parseFloat(document.querySelector('[onchange*="total_sales"]')?.closest('.kv-tile')?.querySelector('input')?.value || clState.figures.total_sales || 0);
+  const sales  = parseFloat(clState.figures.total_sales || 0);
+  if(bills>0){
+    const avgBill = Math.round(sales/bills);
+    clState.figures.avg_bill = avgBill;
+    document.querySelectorAll('[onchange*="avg_bill"]').forEach(el=>el.value=avgBill||'');
+  }
+  const totalItems = parseFloat(clState.figures.items||0);
+  if(totalItems>0&&sales>0){
+    const avgItem = Math.round(sales/totalItems);
+    clState.figures.avg_item = avgItem;
+    document.querySelectorAll('[onchange*="avg_item"]').forEach(el=>el.value=avgItem||'');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// CAMERA TAB
+// ══════════════════════════════════════════════════════
+const CAM_KEY   = 'be_cam_v1';
+const CAM_OPEN_CATS = [
+  {k:'exterior',   icon:'🏪', hi:'दुकान बाहर से (टाइमस्टैम्प)',     en:'Store Exterior (Timestamp)'},
+  {k:'group_selfie',icon:'🤳',hi:'ग्रुप सेल्फी (सभी उपस्थित स्टाफ)',en:'Group Selfie (All Staff)'},
+  {k:'floor',      icon:'🧹', hi:'फर्श और सफाई (अंदर)',              en:'Floor & Cleanliness (Inside)'},
+  {k:'display',    icon:'🪟', hi:'डिस्प्ले / गोलचक्री',              en:'Display / Golchakri'},
+  {k:'trial_room', icon:'🚪', hi:'ट्रायल रूम',                       en:'Trial Room'},
+  {k:'posters',    icon:'📋', hi:'पोस्टर और ऑफर बोर्ड',              en:'Posters & Offer Boards'},
+];
+const CAM_CLOSE_CATS = [
+  {k:'closing_ext', icon:'🌙', hi:'दुकान बंद (शटर बंद)',  en:'Store Closed (Shutters Down)'},
+  {k:'closing_int', icon:'💡', hi:'लाइट बंद (अंदर)',      en:'Lights Off (Inside)'},
+];
+const GROOM_CHECKS = ['Uniform ✓','Hair ✓','Shoes ✓','ID Card ✓','Clean Hands ✓'];
+
+function loadCamData(){ try{return JSON.parse(localStorage.getItem(CAM_KEY)||'{}')}catch(e){return{}} }
+function saveCamData(d){ localStorage.setItem(CAM_KEY, JSON.stringify(d)); }
+
+function initCamera(){
+  const store=document.getElementById('cam-store').value||'BC';
+  const camData=loadCamData();
+  const today=todayStr2();
+
+  // Build opening grid
+  renderCamGrid('cam-opening-grid', CAM_OPEN_CATS, camData, today, store, 'open');
+  // Build grooming grid
+  renderGroomingGrid(store, camData, today);
+  // Build closing grid
+  renderCamGrid('cam-closing-grid', CAM_CLOSE_CATS, camData, today, store, 'close');
+  updateCamProgress(camData, today, store);
+}
+
+function renderCamGrid(containerId, cats, camData, today, store, prefix){
+  const el=document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML=cats.map(cat=>{
+    const key=`${store}_${today}_${prefix}_${cat.k}`;
+    const d=camData[key]||{};
+    const hasPhoto=!!d.thumb;
+    return `<div class="cam-cat-card${hasPhoto?' captured':''}" id="camcard_${cat.k}">
+      <div class="cam-cat-hdr">
+        <div>
+          <div class="cam-cat-icon">${cat.icon}</div>
+          <div class="cam-cat-title hi">${cat[lang]||cat.hi}</div>
+        </div>
+        <div class="cam-cat-status${hasPhoto?' done':''}">${hasPhoto?'✅':'⬜'}</div>
+      </div>
+      ${hasPhoto
+        ? `<img class="cam-cat-thumb" src="${d.thumb}" alt="${cat.hi}">
+           <div class="cam-meta">
+             📅 ${d.time||'—'} | 👤 ${d.by||'—'}
+             ${d.driveUrl?`<br>🔗 <a href="${d.driveUrl}" target="_blank" style="color:var(--blue);font-size:10px">View in Drive</a>`:'<br><span style="color:var(--orange);font-size:10px">⏳ Not yet in Drive</span>'}
+           </div>`
+        : `<div class="cam-cat-thumb-placeholder">📷</div>`}
+      <label class="cam-upload-btn">
+        📷 ${hasPhoto?(lang==='hi'?'फिर खींचें':'Retake'):(lang==='hi'?'फोटो खींचें':'Take Photo')}
+        <input type="file" accept="image/*" capture="environment" style="display:none"
+          onchange="handleCamCapture(this,'${cat.k}','${prefix}','${store}','${today}')">
+      </label>
+    </div>`;
+  }).join('');
+}
+
+function renderGroomingGrid(store, camData, today){
+  const el=document.getElementById('cam-grooming-grid');
+  if(!el) return;
+  const team=TEAMS[store]||[];
+  document.getElementById('cam-groom-progress').textContent=`0/${team.length}`;
+  el.innerHTML=team.map(nm=>{
+    const key=`${store}_${today}_groom_${nm}`;
+    const d=camData[key]||{grade:'',checks:[],thumb:''};
+    const grades=['A','B','C'];
+    const gradeCols={A:'var(--green)',B:'var(--gold)',C:'var(--red)'};
+    return `<div class="grooming-card${d.grade==='A'?' ok':d.grade==='C'?' fail':''}" id="groomcard_${nm}">
+      <div class="grooming-card-hdr">
+        <span class="grooming-name">👤 ${nm}</span>
+        ${d.grade?`<span style="font-size:11px;font-weight:800;color:${gradeCols[d.grade]||'#ccc'}">${d.grade}</span>`:''}
+      </div>
+      <div class="grooming-card-body">
+        ${d.thumb
+          ? `<img class="grooming-photo" src="${d.thumb}" alt="${nm}">
+             <div style="font-size:10px;text-align:center;padding:2px 4px;color:${d.driveUrl?'var(--green)':'var(--orange)'}">
+               ${d.driveUrl?'✅ In Drive':'⏳ Not in Drive'}
+             </div>`
+          : `<label class="grooming-photo-ph" title="Tap to take photo">📷<input type="file" accept="image/*" capture="user" style="display:none" onchange="handleGroomCapture(this,'${nm}','${store}','${today}')"></label>`}
+        <div class="grooming-checks">
+          ${GROOM_CHECKS.map((c,i)=>`<label class="grooming-check-item">
+            <input type="checkbox" ${(d.checks||[]).includes(i)?'checked':''}
+              onchange="updateGroomCheck('${nm}','${store}','${today}',${i},this.checked)">
+            <span style="font-size:11px">${c}</span>
+          </label>`).join('')}
+        </div>
+        <div class="grooming-grade">
+          ${grades.map(g=>`<button class="grade-btn ${g.toLowerCase()}${d.grade===g?' active':''}"
+            onclick="setGroomGrade('${nm}','${store}','${today}','${g}',this)">${g}</button>`).join('')}
+        </div>
+        ${d.thumb?`<label class="cam-upload-btn" style="margin-top:6px">📷 ${lang==='hi'?'फिर खींचें':'Retake'}<input type="file" accept="image/*" capture="user" style="display:none" onchange="handleGroomCapture(this,'${nm}','${store}','${today}')"></label>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function handleCamCapture(input, catKey, prefix, store, today){
+  const file=input.files[0];
+  if(!file) return;
+  compressImage(file, 400, 0.7, async (thumb)=>{
+    const by  = document.getElementById('cam-by')?.value||'—';
+    const time= new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    const key = `${store}_${today}_${prefix}_${catKey}`;
+    const camData=loadCamData();
+
+    // Show uploading indicator
+    toast('⏳ '+(lang==='hi'?'Drive पर upload हो रहा है...':'Uploading to Drive...'));
+
+    // Upload to Google Drive immediately
+    const driveUrl = await uploadPhotoToDrive(thumb, catKey, store, today, by, '', '', null);
+
+    camData[key]={
+      thumb,        // keep local copy for display
+      driveUrl,     // Drive link
+      time, by,
+      capturedAt:new Date().toISOString()
+    };
+    saveCamData(camData);
+    initCamera();
+
+    if(driveUrl){
+      toast('✅ '+(lang==='hi'?'Drive पर save हुई! Sheet में link है।':'Saved to Drive! Link in Sheet.'));
+    } else {
+      toast('📸 '+(lang==='hi'?'फोटो local save हुई (Drive offline)':'Photo saved locally'));
+    }
+  });
+}
+
+function handleGroomCapture(input, name, store, today){
+  const file=input.files[0];
+  if(!file) return;
+  compressImage(file, 300, 0.7, async (thumb)=>{
+    const key     = `${store}_${today}_groom_${name}`;
+    const by      = document.getElementById('cam-by')?.value||'—';
+    const camData = loadCamData();
+    if(!camData[key]) camData[key]={grade:'',checks:[]};
+
+    toast('⏳ '+(lang==='hi'?'Grooming photo upload हो रहा है...':'Uploading grooming photo...'));
+
+    // Upload to Drive with grooming metadata
+    const groomData = camData[key];
+    const driveUrl  = await uploadPhotoToDrive(
+      thumb, 'groom_'+name, store, today, by, name,
+      groomData.grade||'', groomData.checks||[]
+    );
+
+    camData[key].thumb    = thumb;
+    camData[key].driveUrl = driveUrl;
+    camData[key].capturedAt = new Date().toISOString();
+    saveCamData(camData);
+    renderGroomingGrid(store, camData, today);
+
+    toast(driveUrl
+      ? '✅ '+name+' '+(lang==='hi'?'Drive पर save हुई':'saved to Drive')
+      : '📸 '+name+' '+(lang==='hi'?'local save हुई':'saved locally')
+    );
+  });
+}
+
+function updateGroomCheck(nm,store,today,idx,checked){
+  const key=`${store}_${today}_groom_${nm}`;
+  const camData=loadCamData();
+  if(!camData[key]) camData[key]={grade:'',checks:[],thumb:''};
+  const checks=camData[key].checks||[];
+  if(checked){ if(!checks.includes(idx)) checks.push(idx); }
+  else{ const i=checks.indexOf(idx); if(i>=0) checks.splice(i,1); }
+  camData[key].checks=checks;
+  saveCamData(camData);
+}
+function setGroomGrade(nm,store,today,grade,btn){
+  const key=`${store}_${today}_groom_${nm}`;
+  const camData=loadCamData();
+  if(!camData[key]) camData[key]={grade:'',checks:[],thumb:''};
+  camData[key].grade=grade;
+  saveCamData(camData);
+  const card=document.getElementById('groomcard_'+nm);
+  card.classList.toggle('ok',grade==='A');
+  card.classList.toggle('fail',grade==='C');
+  card.querySelectorAll('.grade-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function updateCamProgress(camData, today, store){
+  const openDone=CAM_OPEN_CATS.filter(c=>camData[`${store}_${today}_open_${c.k}`]?.thumb).length;
+  document.getElementById('cam-open-progress').textContent=`${openDone}/${CAM_OPEN_CATS.length}`;
+  const team=TEAMS[store]||[];
+  const groomDone=team.filter(nm=>camData[`${store}_${today}_groom_${nm}`]?.thumb).length;
+  document.getElementById('cam-groom-progress').textContent=`${groomDone}/${team.length}`;
+}
+
+function compressImage(file, maxW, quality, cb){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const ratio=Math.min(maxW/img.width, maxW/img.height, 1);
+      canvas.width=img.width*ratio; canvas.height=img.height*ratio;
+      canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+      cb(canvas.toDataURL('image/jpeg',quality));
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function submitCameraReport(){
+  const store   = document.getElementById('cam-store').value||'BC';
+  const by      = document.getElementById('cam-by').value||'—';
+  const today   = todayStr2();
+  const camData = loadCamData();
+
+  // Build photoData object — all base64 images
+  const photoData = {};
+  CAM_OPEN_CATS.forEach(cat=>{
+    const key=`${store}_${today}_open_${cat.k}`;
+    if(camData[key]?.thumb) photoData[cat.k]=camData[key].thumb;
+  });
+  CAM_CLOSE_CATS.forEach(cat=>{
+    const key=`${store}_${today}_close_${cat.k}`;
+    if(camData[key]?.thumb) photoData[cat.k]=camData[key].thumb;
+  });
+
+  // Build grooming data
+  const groomingData={};
+  TEAMS[store].forEach(nm=>{
+    const key=`${store}_${today}_groom_${nm}`;
+    if(camData[key]) groomingData[nm]=camData[key];
+  });
+
+  const openCount  = CAM_OPEN_CATS.filter(c=>camData[`${store}_${today}_open_${c.k}`]?.thumb).length;
+  const groomCount = TEAMS[store].filter(nm=>camData[`${store}_${today}_groom_${nm}`]?.thumb).length;
+
+  // Show uploading message
+  document.getElementById('cam-success').style.display='block';
+  document.getElementById('cam-success-msg').innerHTML =
+    `<span style="color:var(--gold)">⏳ ${lang==='hi'?'Google Drive पर upload हो रहा है... (30-60 sec)':'Uploading to Google Drive... (30-60 sec)'}</span>`;
+
+  const payload={
+    type_       : 'camera',
+    store, by,
+    date        : today,
+    photoData   : JSON.stringify(photoData),
+    groomingData: JSON.stringify(groomingData),
+    openingPhotos: openCount,
+    groomingDone : groomCount,
+    captureTime : new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),
+    submittedAt : new Date().toISOString()
+  };
+
+  await sendToSheets(payload);
+
+  document.getElementById('cam-success-msg').innerHTML =
+    `✅ ${store} — ${by} — ${today}<br>
+     <span style="font-size:12px;color:var(--green)">
+       ${lang==='hi'?`${openCount}/6 opening photos + ${groomCount} grooming photos Google Drive में save हुईं।`
+                    :`${openCount}/6 opening + ${groomCount} grooming photos saved to Google Drive.`}
+     </span><br>
+     <span style="font-size:11px;color:var(--light)">${lang==='hi'?'Google Sheet में Drive links देखें':'Check Google Sheet for Drive links'}</span>`;
+}
+function camReset(){ document.getElementById('cam-success').style.display='none'; initCamera(); }
+
+async function openDriveFolder(){
+  const store = document.getElementById('cam-store').value||'BC';
+  const today = todayStr2();
+  toast(lang==='hi'?'⏳ Drive folder link मिल रहा है...':'⏳ Getting Drive folder link...');
+  const url = await getDriveFolderLink(store, today);
+  if(url){ window.open(url,'_blank'); }
+  else {
+    // Show manual path
+    toast(lang==='hi'
+      ?'Google Drive → BE Daily Photos → '+store+' → '+today
+      :'Google Drive → BE Daily Photos → '+store+' → '+today);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// PRODUCTIVITY SHEET
+// ══════════════════════════════════════════════════════
+const PROD_KEY='be_prod_v1';
+let prodBlock=15;
+const PROD_CATS=['Sales & Service','Stock & Display','Billing & ERP','Store Upkeep','Customer Relations','Admin / Learning','Other'];
+
+function loadProd(date,staff){ try{return JSON.parse(localStorage.getItem(`${PROD_KEY}_${date}_${staff}`)||'{}')}catch(e){return{}} }
+function saveProd(date,staff,data){ localStorage.setItem(`${PROD_KEY}_${date}_${staff}`,JSON.stringify(data)); }
+
+function setProdBlock(n,btn){
+  prodBlock=n;
+  document.querySelectorAll('.prod-block-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderProductivity();
+}
+
+function genProdSlots(){
+  const slots=[];let h=10,m=0;
+  while(h<21){
+    const start=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    let m2=m+prodBlock,h2=h+Math.floor(m2/60);m2=m2%60;
+    const end=`${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}`;
+    const isLunch=(h===13&&m>=30)||(h===14&&m<30);
+    slots.push({start,end,isLunch,id:`${h}_${m}`});
+    h=h2;m=m2;if(h>=21)break;
+  }
+  return slots;
+}
+
+function renderProductivity(){
+  const staff=document.getElementById('prod-staff')?.value||'';
+  const date=document.getElementById('prod-date')?.value||todayStr2();
+  if(!staff){
+    document.getElementById('prod-rows').innerHTML=`<div class="empty-tasks"><div class="empty-tasks-icon">👤</div><div class="hi">${lang==='hi'?'कर्मचारी चुनें':'Select a staff member'}</div></div>`;
+    return;
+  }
+  const data=loadProd(date,staff);
+  const slots=genProdSlots();
+  let filled=0,done=0;
+
+  const catOpts=PROD_CATS.map(c=>`<option value="${c}">${c}</option>`).join('');
+  const rows=slots.map(s=>{
+    const d=data[s.id]||{};
+    if(s.isLunch) return `<div class="prod-time-row prod-row lunch-row">
+      <span class="prod-time-lbl lunch">${s.start}</span>
+      <span class="prod-task-inp lunch-inp" style="display:flex;align-items:center;justify-content:center;border:none;background:#fff8e7">🍽️ ${lang==='hi'?'लंच ब्रेक':'Lunch Break'}</span>
+      <span></span><span></span></div>`;
+    if(d.task&&d.task.trim()) filled++;
+    if(d.done) done++;
+    return `<div class="prod-time-row prod-row${d.done?' done-row':''}">
+      <span class="prod-time-lbl">${s.start}</span>
+      <input class="prod-task-inp" type="text" placeholder="${lang==='hi'?'काम...':'Task...'}"
+        value="${(d.task||'').replace(/"/g,'&quot;')}"
+        oninput="saveProdSlot('${date}','${staff}','${s.id}','task',this.value)">
+      <select class="prod-cat-sel" onchange="saveProdSlot('${date}','${staff}','${s.id}','cat',this.value)">
+        <option value="">— ${lang==='hi'?'श्रेणी':'Category'} —</option>
+        ${catOpts}
+      </select>
+      <div class="prod-done-cb${d.done?' on':''}" onclick="toggleProdDone('${date}','${staff}','${s.id}',this)"></div>
+    </div>`;
+  }).join('');
+
+  const workSlots=slots.filter(s=>!s.isLunch).length;
+  const pct=workSlots>0?Math.round(filled/workSlots*100):0;
+  document.getElementById('prod-filled').textContent=filled+'/'+workSlots;
+  document.getElementById('prod-done').textContent=done;
+  document.getElementById('prod-pct').textContent=pct+'%';
+  document.getElementById('prod-rows').innerHTML=rows;
+}
+
+function saveProdSlot(date,staff,id,field,val){
+  const data=loadProd(date,staff);
+  if(!data[id]) data[id]={};
+  data[id][field]=val;
+  saveProd(date,staff,data);
+}
+function toggleProdDone(date,staff,id,el){
+  const data=loadProd(date,staff);
+  if(!data[id]) data[id]={};
+  data[id].done=!data[id].done;
+  saveProd(date,staff,data);
+  el.classList.toggle('on',data[id].done);
+  el.closest('.prod-time-row').classList.toggle('done-row',data[id].done);
+}
+async function submitProductivity(){
+  const staff=document.getElementById('prod-staff')?.value||'';
+  const date=document.getElementById('prod-date')?.value||todayStr2();
+  if(!staff){toast(lang==='hi'?'कर्मचारी चुनें':'Select staff');return;}
+  const data=loadProd(date,staff);
+  const payload={type_:'productivity',staff,date,block:prodBlock,data:JSON.stringify(data),submittedAt:new Date().toISOString()};
+  await sendToSheets(payload);
+  toast('✅ '+(lang==='hi'?'प्रोडक्टिविटी शीट जमा हुई':'Productivity sheet submitted'));
+}
+
+// ══════════════════════════════════════════════════════
+// MONTHLY ANALYTICS + WA SHARE
+// ══════════════════════════════════════════════════════
+function renderAnalytics(){
+  const store=document.getElementById('ana-store')?.value||'';
+  const monthVal=document.getElementById('ana-month')?.value||new Date().toISOString().slice(0,7);
+  const [yr,mo]=monthVal.split('-').map(Number);
+  const today=todayStr2();
+
+  // Gather closing submissions for this month from allReports + localStorage
+  const all=[...allReports].filter(r=>{
+    if(r.type_!=='checklist'||r.sheetType!=='closing') return false;
+    if(store&&r.store!==store) return false;
+    return (r.date||'').startsWith(monthVal);
+  });
+
+  // Also try localStorage demo
+  const lsKeys=Object.keys(localStorage).filter(k=>k.startsWith('be_ts_'));
+
+  // Aggregate vitals
+  let totalBills=0,totalSales=0,totalItems=0,totalWalkin=0,totalReviews=0,totalRepeat=0,totalNew=0;
+  let days=0;
+  all.forEach(r=>{
+    const f=r.figures?JSON.parse(r.figures||'{}'):{};
+    if(f.bills){totalBills+=parseFloat(f.bills)||0;days++;}
+    totalSales+=parseFloat(f.total_sales||0);
+    totalItems+=parseFloat(f.items||0);
+    totalWalkin+=parseFloat(f.walkin||0);
+    totalReviews+=parseFloat(f.review||0);
+    totalRepeat+=parseFloat(f.repeat||0);
+    totalNew+=parseFloat(f.newcust||0);
+  });
+
+  const avgBill=totalBills>0?Math.round(totalSales/totalBills):0;
+  const avgItem=totalItems>0?Math.round(totalSales/totalItems):0;
+  const convRate=totalWalkin>0?Math.round((totalBills/totalWalkin)*100):0;
+
+  // Previous month
+  let prevMo=mo-1,prevYr=yr;
+  if(prevMo<1){prevMo=12;prevYr=yr-1;}
+  const prevMonth=`${prevYr}-${String(prevMo).padStart(2,'0')}`;
+  const prevAll=allReports.filter(r=>r.type_==='checklist'&&r.sheetType==='closing'&&(r.date||'').startsWith(prevMonth)&&(!store||r.store===store));
+  let prevBills=0,prevSales=0;
+  prevAll.forEach(r=>{const f=r.figures?JSON.parse(r.figures||'{}'):{};prevBills+=parseFloat(f.bills||0);prevSales+=parseFloat(f.total_sales||0);});
+  const momGrowth=prevSales>0?Math.round(((totalSales-prevSales)/prevSales)*100):null;
+  const billMoM=prevBills>0?Math.round(((totalBills-prevBills)/prevBills)*100):null;
+
+  const monthNames=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function kpi(lbl,val,change,prefix=''){
+    const changeHtml=change!==null?`<div class="analytics-kpi-change ${change>0?'up':change<0?'down':'flat'}">${change>0?'▲':'▼'} ${Math.abs(change)}% vs last month</div>`:'<div class="analytics-kpi-change flat">No prev data</div>';
+    return `<div class="analytics-kpi"><div class="analytics-kpi-lbl hi">${lbl}</div><div class="analytics-kpi-val">${prefix}${val.toLocaleString('en-IN')}</div>${changeHtml}</div>`;
+  }
+
+  // Bar chart: daily bills
+  const dailyBills={};
+  all.forEach(r=>{const f=r.figures?JSON.parse(r.figures||'{}'):{};if(f.bills) dailyBills[r.date]=(dailyBills[r.date]||0)+parseFloat(f.bills);});
+  const sortedDays=Object.entries(dailyBills).sort((a,b)=>a[0].localeCompare(b[0]));
+  const maxBills=Math.max(...sortedDays.map(d=>d[1]),1);
+  const barChart=sortedDays.slice(-10).map(([date,bills])=>{
+    const pct=Math.round(bills/maxBills*100);
+    const d=parseInt(date.slice(8));
+    return `<div class="bar-chart-row">
+      <span class="bar-chart-lbl">${d}${monthNames[mo]}</span>
+      <div class="bar-chart-bg"><div class="bar-chart-fill" style="width:${pct}%;background:var(--blue)">${bills}</div></div>
+      <span class="bar-chart-val">₹${Math.round(dailyBills[date]*(avgBill||0)).toLocaleString('en-IN')}</span>
+    </div>`;
+  }).join('');
+
+  const html=`
+    <div class="analytics-kpi-grid">
+      ${kpi(lang==='hi'?'कुल बिल':'Total Bills',totalBills,billMoM)}
+      ${kpi(lang==='hi'?'कुल बिक्री':'Total Sales',totalSales,momGrowth,'₹')}
+      ${kpi(lang==='hi'?'औसत बिल मूल्य':'Avg Bill Value',avgBill,null,'₹')}
+      ${kpi(lang==='hi'?'औसत आइटम मूल्य':'Avg Item Value',avgItem,null,'₹')}
+      ${kpi(lang==='hi'?'कुल वॉक-इन':'Total Walk-ins',totalWalkin,null)}
+      ${kpi(lang==='hi'?'कनवर्जन %':'Conversion %',convRate,null,'','')}
+      ${kpi(lang==='hi'?'दोबारा ग्राहक':'Repeat Customers',totalRepeat,null)}
+      ${kpi(lang==='hi'?'नए ग्राहक':'New Customers',totalNew,null)}
+    </div>
+    ${sortedDays.length>0?`<div class="analytics-chart-wrap">
+      <div class="analytics-chart-title hi">${lang==='hi'?'रोज़ाना बिल — पिछले 10 दिन':'Daily Bills — Last 10 Days'}</div>
+      ${barChart}
+    </div>`:''}
+    <div class="analytics-chart-wrap">
+      <div class="analytics-chart-title">Month Summary — ${monthNames[mo]} ${yr} ${store?'| '+store:'| All Stores'}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+        <div>📅 <b>${lang==='hi'?'डेटा वाले दिन':'Days with data'}</b>: ${days}</div>
+        <div>🟢 <b>${lang==='hi'?'गूगल समीक्षाएं':'Google Reviews'}</b>: ${totalReviews}</div>
+        <div>📈 <b>MoM Growth</b>: ${momGrowth!==null?(momGrowth>0?'▲ ':'▼ ')+Math.abs(momGrowth)+'%':'—'}</div>
+        <div>💰 <b>${lang==='hi'?'कुल बिक्री':'Total Sales'}</b>: ₹${totalSales.toLocaleString('en-IN')}</div>
+      </div>
+    </div>
+    ${all.length===0?`<div class="empty-tasks"><div class="empty-tasks-icon">📭</div><div class="hi">${lang==='hi'?`${monthNames[mo]} ${yr} के लिए कोई डेटा नहीं। पहले Closing चेकलिस्ट जमा करें।`:'No data for this month. Submit closing checklists first.'}</div></div>`:''}`;
+
+  document.getElementById('analytics-body').innerHTML=html;
+}
+
+function openWAShare(){
+  const panel=document.getElementById('wa-share-panel');
+  panel.style.display=panel.style.display==='none'?'block':'none';
+  generateWAReport();
+}
+
+function generateWAReport(){
+  const emp=document.getElementById('wa-emp-sel')?.value||'';
+  if(!emp){document.getElementById('wa-preview').textContent=lang==='hi'?'कर्मचारी चुनें...':'Select employee...';return;}
+  const monthVal=document.getElementById('ana-month')?.value||new Date().toISOString().slice(0,7);
+  const store=document.getElementById('ana-store')?.value||'BC';
+
+  // Gather data for this employee from attendance + productivity
+  const attData=allReports.filter(r=>r.type_==='attendance'&&(r.date||'').startsWith(monthVal));
+  let present=0,absent=0,late=0;
+  attData.forEach(r=>{
+    try{const a=JSON.parse(r.attendance||'{}');const k='att_'+emp;if(a[k]){
+      if(a[k].status==='present') present++;
+      else if(a[k].status==='absent') absent++;
+      else if(a[k].status==='late') late++;
+    }}catch(e){}
+  });
+
+  const text=`🏪 *Bhartia Enterprises*
+📋 *साप्ताहिक समीक्षा / Weekly Review*
+👤 *${emp}*  |  🏬 ${store}
+📅 ${monthVal}
+━━━━━━━━━━━━━━━━
+
+📊 *उपस्थिति / Attendance*
+✅ उपस्थित: ${present} दिन
+❌ अनुपस्थित: ${absent} दिन
+⏰ देर से: ${late} दिन
+
+💰 *बिक्री / Sales* _(from closing reports)_
+• कुल बिल: —
+• औसत बिल मूल्य: ₹—
+• औसत आइटम मूल्य: ₹—
+
+📈 *सुधार की जरूरत / Improvement Needed*
+• ________________________
+• ________________________
+
+🎯 *अगले हफ्ते का फोकस / Next Week Focus*
+• ________________________
+• ________________________
+
+💪 *संदेश / Message*
+आपका काम मायने रखता है। 
+अनुशासन और मेहनत से सफलता मिलती है। 🙏
+
+— भारतिया एंटरप्राइजेज मैनेजमेंट`;
+
+  document.getElementById('wa-preview').textContent=text;
+}
+
+function sendWAReport(){
+  const text=document.getElementById('wa-preview')?.textContent||'';
+  const encoded=encodeURIComponent(text);
+  window.open(`https://wa.me/?text=${encoded}`,'_blank');
+}
+
+// ══════════════════════════════════════════════════════
+// NEXT DAY TARGETS (closing section — inline target setter)
+// ══════════════════════════════════════════════════════
+// Stored in clState.nextDayTargets = [{staff,target,priority}]
+
+// INIT
+document.getElementById('cl-date').value=new Date().toISOString().slice(0,10);
+document.getElementById('cl-time').value=new Date().toTimeString().slice(0,5);
+document.getElementById('att-date').value=new Date().toISOString().slice(0,10);
+document.getElementById('rep-date-filter').value=new Date().toISOString().slice(0,10);
+document.getElementById('prod-date').value=new Date().toISOString().slice(0,10);
+document.getElementById('ana-month').value=new Date().toISOString().slice(0,7);
+renderAttendance();
+// Task system init
+carryForwardTasks();
+updateTaskCounts();
+</script>
+</body>
+</html>
