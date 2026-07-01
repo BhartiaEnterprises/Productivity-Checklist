@@ -1,0 +1,1076 @@
+// ════════════════════════════════════════════════════════════════════
+// BHARTIA ENTERPRISES — Google Apps Script (Code.gs)
+// Version 4.0 — COMPLETE with ALL fields
+// Sheets: Checklist | Attendance | Camera | Productivity | Tasks
+//         Daily Vitals | Digital Media | Staff Assignment | All Records
+// ════════════════════════════════════════════════════════════════════
+
+const OWNER_EMAIL       = 'bhartiacoll@gmail.com';
+const SEND_EMAIL_ALERTS = true;
+
+// ── SHEET NAMES ──────────────────────────────────────────────────────
+const SH = {
+  CHECKLIST    : 'Checklists',
+  ATTENDANCE   : 'Attendance',
+  CAMERA       : 'Camera Reports',
+  GROOMING     : 'Staff Grooming',
+  PRODUCTIVITY : 'Productivity',
+  TASKS        : 'Tasks',
+  DIGITAL      : 'Digital Media',
+  STAFF_ASSIGN : 'Staff Assignment',
+  TRAINING     : 'Training',
+  LEAVE        : 'Leave Applications',
+  INTERCHANGE  : 'Staff Interchange',
+  WA_GROUPS    : 'WA Group Additions',
+  VITALS       : 'Daily Vitals',
+  LOG          : 'All Records',
+};
+
+// ════════════════════════════════════════════════════════════════════
+// doPost — MAIN ENTRY POINT (receives all submissions)
+// ════════════════════════════════════════════════════════════════════
+function doPost(e) {
+  // Allow CORS so browser JS can read the response
+  const output = ContentService.createTextOutput();
+  output.setMimeType(ContentService.MimeType.JSON);
+  try {
+    const ss   = SpreadsheetApp.getActiveSpreadsheet();
+    const d    = e.parameter;
+    const type = d.type_ || 'checklist';
+    const now  = nowIST();
+
+    switch(type) {
+      case 'checklist':    handleChecklist(ss, d, now);    break;
+      case 'attendance':   handleAttendance(ss, d, now);   break;
+      case 'camera':       handleCamera(ss, d, now);       break;
+      case 'productivity': handleProductivity(ss, d, now); break;
+      case 'tasks':        handleTasks(ss, d, now);        break;
+    }
+
+    logRecord(ss, d, now);
+    if (SEND_EMAIL_ALERTS) sendEmailAlert(d, type, now);
+
+    // Handle single photo upload — returns Drive URL
+    if (type === 'photo_upload') {
+      const url = handleSinglePhoto(d);
+      return jsonResp({ status:'ok', url: url, timestamp: now });
+    }
+
+    return jsonResp({ status: 'ok', timestamp: now });
+
+  } catch (err) {
+    Logger.log('doPost error: ' + err.toString());
+    return jsonResp({ status: 'error', message: err.toString() });
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SINGLE PHOTO UPLOAD — called one photo at a time from app
+// ════════════════════════════════════════════════════════════════════
+function handleSinglePhoto(d) {
+  try {
+    const b64      = d.photo || '';
+    const store    = d.store || 'BC';
+    const date     = d.date  || new Date().toISOString().slice(0,10);
+    const category = d.category || 'photo';
+    const staffName= d.staffName || '';
+    const by       = d.by || 'Unknown';
+
+    if (!b64 || b64.length < 100) return '';
+
+    const fname = [store, date, category, staffName||by, Date.now()]
+      .filter(Boolean).join('_').replace(/\s/g,'_') + '.jpg';
+    const url = savePhotoToDrive(b64, fname, store, date);
+
+    // Log it in Camera sheet
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = getSheet(ss, SH.CAMERA);
+    if (isEmpty(sheet)) {
+      appendRow(sheet,[
+        'Timestamp','Store','Date','Captured By',
+        'Category','Staff Name','Drive Photo Link',
+        'Capture Time','Submitted At'
+      ]);
+      styleHeader(sheet);
+      sheet.setColumnWidth(7, 250);
+    }
+    appendRow(sheet,[
+      nowIST(), store, date, by,
+      category, staffName, url,
+      d.captureTime||'', d.submittedAt||nowIST()
+    ]);
+
+    // Also log grooming grade if provided
+    if (d.groomGrade && staffName) {
+      const grSheet = getSheet(ss, SH.GROOMING);
+      if (isEmpty(grSheet)) {
+        appendRow(grSheet,[
+          'Timestamp','Store','Date','Staff Name',
+          'Uniform','Hair','Shoes','ID Card','Clean Hands',
+          'Grade','Photo Link','Submitted At'
+        ]);
+        styleHeader(grSheet);
+        grSheet.setColumnWidth(11, 250);
+      }
+      let checks = []; try{checks=JSON.parse(d.groomChecks||'[]');}catch(e){}
+      appendRow(grSheet,[
+        nowIST(), store, date, staffName,
+        checks.includes(0)||checks.includes('0')?'Yes':'No',
+        checks.includes(1)||checks.includes('1')?'Yes':'No',
+        checks.includes(2)||checks.includes('2')?'Yes':'No',
+        checks.includes(3)||checks.includes('3')?'Yes':'No',
+        checks.includes(4)||checks.includes('4')?'Yes':'No',
+        d.groomGrade, url, d.submittedAt||nowIST()
+      ]);
+    }
+
+    return url;
+  } catch(err) {
+    Logger.log('Single photo error: ' + err);
+    return '';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// doGet — RETURNS DATA TO APP (Reports, Analytics)
+// ════════════════════════════════════════════════════════════════════
+function doGet(e) {
+  try {
+    const action = safeParam(e, 'action');
+    const ss     = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (action === 'getReports') {
+      return getReports(ss,
+        safeParam(e,'store'), safeParam(e,'date'),
+        safeParam(e,'type_'), parseInt(safeParam(e,'limit')||'300')
+      );
+    }
+    if (action === 'getAnalytics') {
+      return getAnalytics(ss, safeParam(e,'store'), safeParam(e,'month'));
+    }
+    if (action === 'getAttendance') {
+      return getSheetData(ss, SH.ATTENDANCE, safeParam(e,'store'), safeParam(e,'date'));
+    }
+    if (action === 'getDigital') {
+      return getSheetData(ss, SH.DIGITAL, safeParam(e,'store'), safeParam(e,'date'));
+    }
+    if (action === 'getVitals') {
+      return getSheetData(ss, SH.VITALS, safeParam(e,'store'), safeParam(e,'month'));
+    }
+
+    // Get Drive link for a specific photo after upload
+    if (action === 'getPhotoLink') {
+      const store    = safeParam(e,'store');
+      const date     = safeParam(e,'date');
+      const category = safeParam(e,'category');
+      const staff    = safeParam(e,'staffName');
+      return getPhotoLink(ss, store, date, category, staff);
+    }
+
+    // Get Drive folder link for today's store photos
+    if (action === 'getFolderLink') {
+      const store = safeParam(e,'store');
+      const date  = safeParam(e,'date');
+      try {
+        const folder = getPhotoFolder(store, date);
+        folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        const link = 'https://drive.google.com/drive/folders/' + folder.getId();
+        return jsonResp({ status:'ok', url: link });
+      } catch(err) {
+        return jsonResp({ status:'error', message: err.toString() });
+      }
+    }
+
+    return ContentService.createTextOutput(
+      'Bhartia Enterprises API v4.0 — Running — ' + nowIST()
+    ).setMimeType(ContentService.MimeType.TEXT);
+
+  } catch(err) {
+    return jsonResp({ status:'error', message: err.toString() });
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// CHECKLIST HANDLER — splits into multiple sheets
+// ════════════════════════════════════════════════════════════════════
+function handleChecklist(ss, d, now) {
+  const sheetType = d.sheetType || '';
+  let figs = {};   try { figs = JSON.parse(d.figures||'{}'); }     catch(e){}
+  let checks = {}; try { checks = JSON.parse(d.checks||'{}'); }    catch(e){}
+  let staffT = {}; try { staffT = JSON.parse(d.staffTasks||'{}'); } catch(e){}
+  let trainD = {}; try { trainD = JSON.parse(d.training||'{}'); }   catch(e){}
+  let leaves = []; try { leaves = JSON.parse(d.leaveApps||'[]'); }  catch(e){}
+  let ixs    = []; try { ixs    = JSON.parse(d.interchanges||'[]');}catch(e){}
+  let waGrps = []; try { waGrps = JSON.parse(d.waGroups||'[]'); }   catch(e){}
+  let prsnts = []; try { prsnts = JSON.parse(d.presentStaff||'[]');}catch(e){}
+  let priors = []; try { priors = JSON.parse(d.priorities||'[]'); } catch(e){}
+  let priAsgn= []; try { priAsgn= JSON.parse(d.priAssign||'[]'); }  catch(e){}
+  let asgns  = {}; try { asgns  = JSON.parse(d.assignments||'{}');} catch(e){}
+
+  const checkedCount = Object.values(checks).filter(
+    v => v===true || (Array.isArray(v) && v.length>0)
+  ).length;
+
+  // ── 1. MAIN CHECKLIST SHEET ─────────────────────────────────────
+  const clSheet = getSheet(ss, SH.CHECKLIST);
+  if (isEmpty(clSheet)) {
+    appendRow(clSheet, [
+      'Timestamp','Store','Sheet Type','Manager','Date','Time',
+      'Supervisor','Filled By','Checks Done',
+      'Prayer Done','Vision Read',
+      'Opening — Lights ON','Opening — Floor Cleaned',
+      'Opening — Display Updated','Opening — Golchakri Updated',
+      'Opening — Board Morning','Opening — Board Evening',
+      'Closing — Lights OFF','Closing — Shutters Down',
+      'Closing — ERP Done','Closing — Cash Tallied','Closing — UPI Done',
+      'Closing — Trial Room','Closing — Alterations to Tailor',
+      'Closing — Attendance Closed','Closing — Next Day Targets Set',
+      'Closing — Lockup Done',
+      'Important Work Today','Present Staff','Present Count',
+      'Priority 1 Task','Priority 1 Assigned',
+      'Priority 2 Task','Priority 2 Assigned',
+      'Priority 3 Task','Priority 3 Assigned',
+      'Manager Notes','Strategic Notes','Submitted At'
+    ]);
+    styleHeader(clSheet);
+  }
+  appendRow(clSheet, [
+    now, d.store||'', sheetType, d.manager||'', d.date||'', d.time||'',
+    d.supervisor||'', d.filledBy||'', checkedCount,
+    checks['infra_prayer']||checks['open_prayer']  ? 'Yes':'No',
+    checks['infra_vision']||checks['open_vision']   ? 'Yes':'No',
+    checks['infra_lights']  ? 'Yes':'No',
+    checks['infra_floor']   ? 'Yes':'No',
+    checks['infra_golch']   ? 'Yes':'No',
+    checks['infra_display'] ? 'Yes':'No',
+    (checks['infra_board']||[]).includes('Morning')||(checks['infra_board']||[]).includes('सुबह') ? 'Yes':'No',
+    (checks['infra_board']||[]).includes('Evening')||(checks['infra_board']||[]).includes('शाम')  ? 'Yes':'No',
+    checks['cinfra_lights']  ? 'Yes':'No',
+    checks['cinfra_shutters']? 'Yes':'No',
+    checks['cbill_erp']     ? 'Yes':'No',
+    checks['cbill_cash']    ? 'Yes':'No',
+    checks['cbill_upi']     ? 'Yes':'No',
+    checks['cfloor_trial']  ? 'Yes':'No',
+    checks['cfloor_alteration']?'Yes':'No',
+    checks['cstaff_att']    ? 'Yes':'No',
+    checks['cstaff_targets']? 'Yes':'No',
+    checks['cstaff_lockup'] ? 'Yes':'No',
+    d.impWork||'',
+    Array.isArray(prsnts) ? prsnts.join(', '):'',
+    Array.isArray(prsnts) ? prsnts.length : 0,
+    priors[0]||'', priAsgn[0]||'',
+    priors[1]||'', priAsgn[1]||'',
+    priors[2]||'', priAsgn[2]||'',
+    d.mgrNotes||'', d.rsNotes||'', d.submittedAt||now
+  ]);
+
+  // ── 2. STAFF ASSIGNMENT SHEET ───────────────────────────────────
+  const aSheet = getSheet(ss, SH.STAFF_ASSIGN);
+  if (isEmpty(aSheet)) {
+    appendRow(aSheet, [
+      'Timestamp','Store','Sheet Type','Manager','Date',
+      'Staff Name','Task 1','Task 1 Priority','Task 1 Done',
+      'Task 2','Task 2 Priority','Task 2 Done',
+      'Task 3','Task 3 Priority','Task 3 Done',
+      'Task 4','Task 4 Priority','Task 4 Done',
+      'Total Tasks','Done Count','Pending Count'
+    ]);
+    styleHeader(aSheet);
+  }
+  Object.entries(staffT).forEach(([name, tasks]) => {
+    if (!Array.isArray(tasks) || tasks.length===0) return;
+    const row = [now, d.store||'', sheetType, d.manager||'', d.date||'', name];
+    let total=0, doneCount=0;
+    for (let i=0; i<4; i++) {
+      const t = tasks[i] || {};
+      row.push(t.desc||'', t.pri||'', t.done?'Yes':'No');
+      if (t.desc) { total++; if(t.done) doneCount++; }
+    }
+    row.push(total, doneCount, total-doneCount);
+    appendRow(aSheet, row);
+  });
+
+  // ── 3. DIGITAL MEDIA SHEET ──────────────────────────────────────
+  const digSheet = getSheet(ss, SH.DIGITAL);
+  if (isEmpty(digSheet)) {
+    appendRow(digSheet, [
+      'Timestamp','Store','Manager','Date',
+      'FB — Post','FB — Reel','FB — Story','FB — Live','FB — Video','FB Time','FB Topic',
+      'IG — Post','IG — Reel','IG — Story','IG — Live','IG Time','IG Topic',
+      'YouTube — Video','YouTube — Shorts','YouTube — Community','YouTube — Live','YT Time','YT Topic',
+      'Google Map — Post','Google Map — Video','Google Map — Offer','GM Time',
+      'WA — Status Video','WA — Status Photo','WA — Broadcast','WA Time',
+      'WA Team Status Updated (Names)',
+      'New Contacts Added','Total Videos Today','Content Notes',
+      'WA Groups — Group Name','WA Groups — Count Added','WA Groups — From','WA Groups — To'
+    ]);
+    styleHeader(digSheet);
+  }
+  const digCk = checks;
+  const digFig = figs;
+  const times = {}; try { Object.assign(times, JSON.parse(d.times||'{}')); } catch(e){}
+  const fbArr  = digCk['dig_fb']    ||[];
+  const igArr  = digCk['dig_ig']    ||[];
+  const ytArr  = digCk['dig_yt']    ||[];
+  const gmArr  = digCk['dig_gm']    ||[];
+  const waFmt  = digCk['dig_wa_fmt']||[];
+  const waTm   = digCk['dig_team']  ||[];
+  const waGrpStr = waGrps.map(g=>`${g.group||'—'}(${g.count||0}, ${g.from||''}→${g.to||''})`).join(' | ');
+  appendRow(digSheet, [
+    now, d.store||'', d.manager||'', d.date||'',
+    fbArr.includes('Post 📸')||fbArr.includes('पोस्ट 📸')?'Yes':'No',
+    fbArr.includes('Reel 🎬')||fbArr.includes('रील 🎬')?'Yes':'No',
+    fbArr.includes('Story 📲')||fbArr.includes('स्टोरी 📲')?'Yes':'No',
+    fbArr.includes('Live 🔴')||fbArr.includes('लाइव 🔴')?'Yes':'No',
+    fbArr.includes('Video 🎥')||fbArr.includes('वीडियो 🎥')?'Yes':'No',
+    times['fb_t']||'', digFig['fb_t_topic']||'',
+    igArr.includes('Post 📸')||igArr.includes('पोस्ट 📸')?'Yes':'No',
+    igArr.includes('Reel 🎬')||igArr.includes('रील 🎬')?'Yes':'No',
+    igArr.includes('Story 📲')||igArr.includes('स्टोरी 📲')?'Yes':'No',
+    igArr.includes('Live 🔴')||igArr.includes('लाइव 🔴')?'Yes':'No',
+    times['ig_t']||'', digFig['ig_t_topic']||'',
+    ytArr.includes('Video 🎥')||ytArr.includes('वीडियो 🎥')?'Yes':'No',
+    ytArr.includes('Shorts ⚡')||ytArr.includes('शॉर्ट्स ⚡')?'Yes':'No',
+    ytArr.includes('Community 📝')||ytArr.includes('कम्युनिटी 📝')?'Yes':'No',
+    ytArr.includes('Live 🔴')||ytArr.includes('लाइव 🔴')?'Yes':'No',
+    times['yt_t']||'', digFig['yt_t_topic']||'',
+    gmArr.includes('Photo 📸')||gmArr.includes('फोटो 📸')?'Yes':'No',
+    gmArr.includes('Video 🎥')||gmArr.includes('वीडियो 🎥')?'Yes':'No',
+    gmArr.includes('Offer Update 🏷️')||gmArr.includes('ऑफर अपडेट 🏷️')?'Yes':'No',
+    times['gm_t']||'',
+    waFmt.includes('Status Video 🎬')||waFmt.includes('स्टेटस वीडियो 🎬')?'Yes':'No',
+    waFmt.includes('Status Photo 📸')||waFmt.includes('स्टेटस फोटो 📸')?'Yes':'No',
+    waFmt.includes('Broadcast 📢')||waFmt.includes('ब्रॉडकास्ट 📢')?'Yes':'No',
+    times['wa_t']||'',
+    Array.isArray(waTm)?waTm.join(', '):'',
+    digFig['contacts']||'0', digFig['total_videos']||'0', digFig['content_note']||'',
+    waGrps.map(g=>g.group||'').join(' | '),
+    waGrps.map(g=>g.count||'').join(' | '),
+    waGrps.map(g=>g.from||'').join(' | '),
+    waGrps.map(g=>g.to||'').join(' | ')
+  ]);
+
+  // ── 4. TRAINING SHEET ───────────────────────────────────────────
+  const trSheet = getSheet(ss, SH.TRAINING);
+  if (isEmpty(trSheet)) {
+    appendRow(trSheet,[
+      'Timestamp','Store','Manager','Date','Staff Name','Subject / Topic','Duration (mins)','Result / Notes'
+    ]);
+    styleHeader(trSheet);
+  }
+  Object.entries(trainD).forEach(([name, tr]) => {
+    if (!tr || (!tr.subject && !tr.mins)) return;
+    appendRow(trSheet,[now,d.store||'',d.manager||'',d.date||'',name,tr.subject||'',tr.mins||'',tr.result||'']);
+  });
+
+  // ── 5. LEAVE APPLICATIONS ───────────────────────────────────────
+  const lvSheet = getSheet(ss, SH.LEAVE);
+  if (isEmpty(lvSheet)) {
+    appendRow(lvSheet,[
+      'Timestamp','Store','Manager','Date Submitted',
+      'Staff Name','Leave Type','From Date','To Date','Reason','Granted?'
+    ]);
+    styleHeader(lvSheet);
+  }
+  leaves.forEach(l => {
+    if (!l.name) return;
+    appendRow(lvSheet,[
+      now,d.store||'',d.manager||'',d.date||'',
+      l.name||'',l.type||'',l.from||'',l.to||'',l.reason||'',
+      l.granted==='yes'?'Yes':l.granted==='no'?'No':'Pending'
+    ]);
+  });
+
+  // ── 6. STAFF INTERCHANGE ────────────────────────────────────────
+  const ixSheet = getSheet(ss, SH.INTERCHANGE);
+  if (isEmpty(ixSheet)) {
+    appendRow(ixSheet,[
+      'Timestamp','Store','Manager','Date','Staff Name','From Store','To Store','Direction'
+    ]);
+    styleHeader(ixSheet);
+  }
+  ixs.forEach(ix => {
+    if (!ix.name) return;
+    appendRow(ixSheet,[
+      now,d.store||'',d.manager||'',d.date||'',
+      ix.name||'',ix.from||'',ix.to||'',ix.to===d.store?'Incoming':'Outgoing'
+    ]);
+  });
+
+  // ── 7. DAILY VITALS (closing only) ──────────────────────────────
+  if (sheetType === 'closing' && Object.keys(figs).length > 0) {
+    const vSheet = getSheet(ss, SH.VITALS);
+    if (isEmpty(vSheet)) {
+      appendRow(vSheet,[
+        'Date','Store','Manager',
+        'Total Bills','Total Sales (Rs)','Total Items Sold',
+        'Avg Bill Value (Rs)','Avg Item Value (Rs)',
+        'New Customers','Repeat Customers',
+        'Walk-ins','Conversion %',
+        'RB Stock Sold','HO Orders Given','Alterations to Tailor',
+        'Google Reviews','Coupons Distributed',
+        'WA Status Views','WA Enquiry Replies',
+        'FB/Meta Replies','Instagram Replies',
+        'Contacts Added','Total Videos Today',
+        'Next Day Priority 1','Next Day Priority 2','Next Day Priority 3'
+      ]);
+      styleHeader(vSheet);
+    }
+    const bills = parseFloat(figs.bills||0);
+    const sales = parseFloat(figs.total_sales||0);
+    const items = parseFloat(figs.items||0);
+    const walk  = parseFloat(figs.walkin||0);
+    appendRow(vSheet,[
+      d.date,d.store,d.manager,
+      bills, sales, items,
+      bills>0 ? Math.round(sales/bills) : '',
+      items>0 ? Math.round(sales/items) : '',
+      figs.newcust||'', figs.repeat||'',
+      walk, walk>0 ? Math.round((bills/walk)*100)+'%' : '',
+      figs.rbsold||'', figs.hoorder||'', figs.tailor||'',
+      figs.review||'', figs.coupon||'',
+      figs.waviews||'', figs.wareply||'',
+      figs.fbreply||'', figs.instreply||'',
+      figs.contacts||'', figs.total_videos||'',
+      priors[0]||'', priors[1]||'', priors[2]||''
+    ]);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ATTENDANCE HANDLER — full detail
+// ════════════════════════════════════════════════════════════════════
+function handleAttendance(ss, d, now) {
+  const sheet = getSheet(ss, SH.ATTENDANCE);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Store','Date','Supervisor','Submitted By',
+      'Staff Name','Status',
+      'Time In','Lunch Out','Lunch In','Time Out',
+      'Work Hours (approx)','Remark','Submitted At'
+    ]);
+    styleHeader(sheet);
+  }
+  let att = {};
+  try { att = JSON.parse(d.attendance||'{}'); } catch(e){}
+  Object.entries(att).forEach(([key,val]) => {
+    const name = key.replace('att_','');
+    let workHrs = '';
+    try {
+      if (val.timeIn && val.timeOut) {
+        const [ih,im] = val.timeIn.split(':').map(Number);
+        const [oh,om] = val.timeOut.split(':').map(Number);
+        let lunchMins = 0;
+        if (val.lunchOut && val.lunchIn) {
+          const [loh,lom] = val.lunchOut.split(':').map(Number);
+          const [lih,lim] = val.lunchIn.split(':').map(Number);
+          lunchMins = (lih*60+lim)-(loh*60+lom);
+        }
+        const total = (oh*60+om)-(ih*60+im)-lunchMins;
+        workHrs = (total/60).toFixed(1)+' hrs';
+      }
+    } catch(e){}
+    appendRow(sheet,[
+      now, d.store||'', d.date||'', d.supervisor||'', d.filledBy||'',
+      name, val.status||'',
+      val.timeIn||'', val.lunchOut||'', val.lunchIn||'', val.timeOut||'',
+      workHrs, val.remark||'', d.submittedAt||now
+    ]);
+  });
+
+  // Summary row
+  const sumSheet = getSheet(ss, 'Attendance Summary');
+  if (isEmpty(sumSheet)) {
+    appendRow(sumSheet,[
+      'Timestamp','Store','Date','Supervisor',
+      'Total Staff','Present','Absent','Late','Half Day',
+      'On Leave (Granted)','Interchange In','Submitted At'
+    ]);
+    styleHeader(sumSheet);
+  }
+  let pr=0,ab=0,lt=0,hd=0;
+  Object.values(att).forEach(v=>{
+    if(v.status==='present')pr++;
+    else if(v.status==='absent')ab++;
+    else if(v.status==='late')lt++;
+    else if(v.status==='halfday')hd++;
+  });
+  const total=Object.keys(att).length;
+  appendRow(sumSheet,[
+    now,d.store||'',d.date||'',d.supervisor||'',
+    total,pr,ab,lt,hd,'','',d.submittedAt||now
+  ]);
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// GOOGLE DRIVE — PHOTO STORAGE
+// ════════════════════════════════════════════════════════════════════
+
+// Gets or creates the main BE Photos folder in Drive
+function getPhotoFolder(store, date) {
+  const rootName = 'BE Daily Photos';
+  let root = null;
+  const rootFolders = DriveApp.getFoldersByName(rootName);
+  root = rootFolders.hasNext() ? rootFolders.next() : DriveApp.createFolder(rootName);
+
+  // Sub-folder: Store name
+  const storeFolders = root.getFoldersByName(store);
+  const storeFolder  = storeFolders.hasNext() ? storeFolders.next() : root.createFolder(store);
+
+  // Sub-folder: Date
+  const dateFolders = storeFolder.getFoldersByName(date);
+  return dateFolders.hasNext() ? dateFolders.next() : storeFolder.createFolder(date);
+}
+
+// Saves a base64 image to Drive, returns public URL
+function savePhotoToDrive(base64Data, fileName, store, date) {
+  try {
+    if (!base64Data || base64Data.length < 100) return '';
+    // Strip data:image/jpeg;base64, prefix
+    const clean    = base64Data.split(',')[1] || base64Data;
+    const blob     = Utilities.newBlob(Utilities.base64Decode(clean), 'image/jpeg', fileName);
+    const folder   = getPhotoFolder(store, date);
+    const file     = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return 'https://drive.google.com/file/d/' + file.getId() + '/view';
+  } catch(err) {
+    Logger.log('Photo save error: ' + err + ' | File: ' + fileName);
+    return '';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// CAMERA HANDLER — saves photos to Google Drive
+// ════════════════════════════════════════════════════════════════════
+function handleCamera(ss, d, now) {
+  const store = d.store||'BC';
+  const date  = d.date||new Date().toISOString().slice(0,10);
+  const by    = d.by||'Unknown';
+
+  // ── Opening photos ──────────────────────────────────────────────
+  const openCats = [
+    {key:'exterior',    label:'Store Exterior'},
+    {key:'group_selfie',label:'Group Selfie'},
+    {key:'floor',       label:'Floor Cleanliness'},
+    {key:'display',     label:'Display Golchakri'},
+    {key:'trial_room',  label:'Trial Room'},
+    {key:'posters',     label:'Posters Offers'},
+  ];
+  const closeCats = [
+    {key:'closing_ext', label:'Closing Exterior'},
+    {key:'closing_int', label:'Closing Lights Off'},
+  ];
+
+  // Parse photo data sent from app
+  let photoData = {};
+  try { photoData = JSON.parse(d.photoData||'{}'); } catch(e){}
+
+  // Save each photo to Drive and get URL
+  const urls = {};
+  [...openCats,...closeCats].forEach(cat => {
+    const b64 = photoData[cat.key] || d[cat.key+'_b64'] || '';
+    if (b64 && b64.length > 100) {
+      const fname = store+'_'+date+'_'+cat.key+'_'+by.replace(/\s/g,'_')+'.jpg';
+      urls[cat.key] = savePhotoToDrive(b64, fname, store, date);
+    } else {
+      urls[cat.key] = '';
+    }
+  });
+
+  // ── Camera Sheet with Drive links ───────────────────────────────
+  const sheet = getSheet(ss, SH.CAMERA);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Store','Date','Captured By','Opening Time',
+      'Store Exterior (Drive Link)',
+      'Group Selfie (Drive Link)',
+      'Floor & Cleanliness (Drive Link)',
+      'Display / Golchakri (Drive Link)',
+      'Trial Room (Drive Link)',
+      'Posters & Offers (Drive Link)',
+      'Total Opening Photos',
+      'Closing Exterior (Drive Link)',
+      'Closing Lights Off (Drive Link)',
+      'Drive Folder Link','Submitted At'
+    ]);
+    styleHeader(sheet);
+    // Make link columns wider
+    [6,7,8,9,10,11,13,14,15].forEach(col => sheet.setColumnWidth(col, 220));
+  }
+
+  // Get folder link
+  let folderLink = '';
+  try {
+    const f = getPhotoFolder(store, date);
+    folderLink = 'https://drive.google.com/drive/folders/'+f.getId();
+  } catch(e){}
+
+  const openCount = openCats.filter(c=>urls[c.key]).length;
+
+  appendRow(sheet,[
+    now, store, date, by, d.captureTime||now,
+    urls['exterior']    || 'No photo',
+    urls['group_selfie']|| 'No photo',
+    urls['floor']       || 'No photo',
+    urls['display']     || 'No photo',
+    urls['trial_room']  || 'No photo',
+    urls['posters']     || 'No photo',
+    openCount+'/6',
+    urls['closing_ext'] || 'No photo',
+    urls['closing_int'] || 'No photo',
+    folderLink,
+    d.submittedAt||now
+  ]);
+
+  // ── Grooming Sheet with Drive links ─────────────────────────────
+  const grSheet = getSheet(ss, SH.GROOMING);
+  if (isEmpty(grSheet)) {
+    appendRow(grSheet,[
+      'Timestamp','Store','Date','Captured By',
+      'Staff Name','Uniform ✓','Hair ✓','Shoes ✓','ID Card ✓','Clean Hands ✓',
+      'Grooming Grade (A/B/C)',
+      'Full Body Photo (Drive Link)',
+      'Submitted At'
+    ]);
+    styleHeader(grSheet);
+    grSheet.setColumnWidth(12, 220);
+  }
+
+  let grooming = {};
+  try { grooming = JSON.parse(d.groomingData||'{}'); } catch(e){}
+
+  Object.entries(grooming).forEach(([nm,g]) => {
+    if (!nm) return;
+    const checks = g.checks||[];
+    let groomPhotoUrl = '';
+    if (g.thumb && g.thumb.length > 100) {
+      const fname = store+'_'+date+'_groom_'+nm.replace(/\s/g,'_')+'.jpg';
+      groomPhotoUrl = savePhotoToDrive(g.thumb, fname, store, date);
+    }
+    appendRow(grSheet,[
+      now, store, date, by, nm,
+      checks.includes(0)?'Yes':'No',
+      checks.includes(1)?'Yes':'No',
+      checks.includes(2)?'Yes':'No',
+      checks.includes(3)?'Yes':'No',
+      checks.includes(4)?'Yes':'No',
+      g.grade||'',
+      groomPhotoUrl || 'No photo',
+      d.submittedAt||now
+    ]);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// PRODUCTIVITY HANDLER
+// ════════════════════════════════════════════════════════════════════
+function handleProductivity(ss, d, now) {
+  const sheet = getSheet(ss, SH.PRODUCTIVITY);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Store','Staff','Date','Block (min)',
+      'Total Work Slots','Slots Filled','Slots Done',
+      'Productivity %','Top Category',
+      'Full Data JSON','Submitted At'
+    ]);
+    styleHeader(sheet);
+  }
+  let filled=0, done=0, total=0;
+  const catCount = {};
+  try {
+    const pd = JSON.parse(d.data||'{}');
+    Object.values(pd).forEach(s => {
+      if (s.isLunch) return;
+      total++;
+      if (s.task && s.task.trim()) filled++;
+      if (s.done) done++;
+      if (s.cat) catCount[s.cat] = (catCount[s.cat]||0)+1;
+    });
+  } catch(e){}
+  const topCat = Object.entries(catCount).sort((a,b)=>b[1]-a[1])[0];
+  appendRow(sheet,[
+    now, d.store||'', d.staff||'', d.date||'', d.block||'30',
+    total, filled, done,
+    total>0 ? Math.round(filled/total*100)+'%' : '0%',
+    topCat ? topCat[0] : '',
+    d.data||'', d.submittedAt||now
+  ]);
+
+  // Also write individual time slots for detailed tracking
+  const detSheet = getSheet(ss, 'Productivity Detail');
+  if (isEmpty(detSheet)) {
+    appendRow(detSheet,[
+      'Timestamp','Store','Staff','Date','Block (min)',
+      'Time Slot','Task','Category','Done?'
+    ]);
+    styleHeader(detSheet);
+  }
+  try {
+    const pd = JSON.parse(d.data||'{}');
+    Object.entries(pd).forEach(([id,s]) => {
+      if (!s.task || !s.task.trim()) return;
+      const [h,m] = id.split('_');
+      const timeStr = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+      appendRow(detSheet,[
+        now, d.store||'', d.staff||'', d.date||'', d.block||'30',
+        timeStr, s.task||'', s.cat||'', s.done?'Yes':'No'
+      ]);
+    });
+  } catch(e){}
+}
+
+// ════════════════════════════════════════════════════════════════════
+// TASKS HANDLER
+// ════════════════════════════════════════════════════════════════════
+function handleTasks(ss, d, now) {
+  const sheet = getSheet(ss, SH.TASKS);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Store','Task Description','Assigned To','Added By',
+      'Priority','Due','Status','Source / Checklist Section',
+      'Carried Forward?','Carried From Date','Done At','Created At'
+    ]);
+    styleHeader(sheet);
+  }
+  let tasks = [];
+  try { tasks = JSON.parse(d.tasks||'[]'); } catch(e){}
+  tasks.forEach(t => {
+    if (!t.desc) return;
+    appendRow(sheet,[
+      now, t.store||d.store||'', t.desc||'',
+      t.assignedTo||'', t.addedBy||'', t.priority||'normal',
+      t.due||'', t.status||'pending', t.source||'',
+      t.carried?'Yes':'No', t.carriedFrom||'', t.doneAt||'', t.createdAt||now
+    ]);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// MASTER LOG
+// ════════════════════════════════════════════════════════════════════
+function logRecord(ss, d, now) {
+  const sheet = getSheet(ss, SH.LOG);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'timestamp','type_','sheetType','store','manager',
+      'date','time','supervisor','filledBy',
+      'checks','figures','attendance','mgrNotes','submittedAt'
+    ]);
+    styleHeader(sheet);
+  }
+  appendRow(sheet,[
+    now, d.type_||'checklist', d.sheetType||'',
+    d.store||'', d.manager||d.staff||d.by||'',
+    d.date||'', d.time||'', d.supervisor||'', d.filledBy||'',
+    d.checks||'', d.figures||'', d.attendance||'',
+    d.mgrNotes||'', d.submittedAt||now
+  ]);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// EMAIL ALERTS
+// ════════════════════════════════════════════════════════════════════
+function sendEmailAlert(d, type, now) {
+  try {
+    let subject='', body='';
+    if (type==='attendance') {
+      subject = '✅ Attendance — '+d.store+' — '+d.date;
+      let att={}; try{att=JSON.parse(d.attendance||'{}');}catch(e){}
+      const lines = Object.entries(att).map(([k,v]) =>
+        k.replace('att_','') + ': ' + v.status +
+        ' | In:' + (v.timeIn||'—') + ' Lunch:' + (v.lunchOut||'—') +
+        '→' + (v.lunchIn||'—') + ' Out:' + (v.timeOut||'—') +
+        (v.remark?' | '+v.remark:'')
+      );
+      body = 'Store:'+d.store+'\nDate:'+d.date+'\nSupervisor:'+d.supervisor+'\n\n'+lines.join('\n');
+
+    } else if (type==='camera') {
+      subject = '📸 Camera Report — '+d.store+' — '+d.date;
+      body = 'Store:'+d.store+'\nDate:'+d.date+'\nBy:'+d.by+
+             '\nOpening Photos:'+d.openingPhotos+'/6'+
+             '\nGrooming Done:'+d.groomingDone;
+
+    } else if (type==='productivity') {
+      subject = '⏱️ Productivity — '+d.staff+' — '+d.date;
+      body = 'Staff:'+d.staff+'\nStore:'+d.store+
+             '\nDate:'+d.date+'\nBlock:'+d.block+'min';
+
+    } else {
+      // Checklist
+      let figs={}; try{figs=JSON.parse(d.figures||'{}');}catch(e){}
+      let staffT={}; try{staffT=JSON.parse(d.staffTasks||'{}');}catch(e){}
+      let leaves=[]; try{leaves=JSON.parse(d.leaveApps||'[]');}catch(e){}
+      const st = (d.sheetType||'checklist').toUpperCase();
+      const bills=figs.bills||'—';
+      const sales=figs.total_sales?'₹'+parseFloat(figs.total_sales).toLocaleString('en-IN'):'—';
+      const avgB=figs.bills&&figs.total_sales?
+        '₹'+Math.round(parseFloat(figs.total_sales)/parseFloat(figs.bills)):'—';
+      subject = '📋 '+st+' — '+d.store+' — '+(d.manager||'?')+' — '+d.date;
+      body = 'Store:'+d.store+' | Type:'+st+' | Manager:'+(d.manager||'—')+
+             ' | Date:'+d.date+' | Time:'+(d.time||'—')+
+             '\n\nBills:'+bills+' | Sales:'+sales+' | Avg Bill:'+avgB+
+             '\nWalk-ins:'+(figs.walkin||'—')+' | New Customers:'+(figs.newcust||'—')+
+             '\nGoogle Reviews:'+(figs.review||'—')+
+             '\nWA Views:'+(figs.waviews||'—')+' | WA Replies:'+(figs.wareply||'—')+
+             '\n\nPresent Staff:'+(d.presentStaff||'—')+
+             '\nImportant Work:'+(d.impWork||'—')+
+             (leaves.length>0?'\nLeave Applications:'+leaves.length:'');
+      if(d.mgrNotes) body+='\n\nManager Notes:'+d.mgrNotes;
+      // Staff tasks summary
+      Object.entries(staffT).forEach(([nm,ts])=>{
+        if(!Array.isArray(ts)) return;
+        const pend=ts.filter(t=>t.desc&&!t.done);
+        if(pend.length>0) body+='\n'+nm+' pending: '+pend.map(t=>t.desc).join(', ');
+      });
+      body+='\n\nSubmitted: '+now;
+    }
+    MailApp.sendEmail(OWNER_EMAIL, subject, body);
+  } catch(err) { Logger.log('Email error:'+err); }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// REPORTS + ANALYTICS
+// ════════════════════════════════════════════════════════════════════
+function getReports(ss, store, date, type_, limit) {
+  const sheet = getSheet(ss, SH.LOG);
+  const data  = sheet.getDataRange().getValues();
+  if (data.length<=1) return jsonResp({records:[]});
+  const headers = data[0];
+  let records = data.slice(1).map(row=>{
+    const obj={};
+    headers.forEach((h,i)=>{ obj[String(h)]= row[i]!==undefined?String(row[i]):''; });
+    return obj;
+  });
+  if(store) records=records.filter(r=>r.store===store);
+  if(date)  records=records.filter(r=>r.date===date);
+  if(type_) records=records.filter(r=>r.type_===type_||r.sheetType===type_);
+  records.reverse();
+  return jsonResp({records:records.slice(0,limit||300), total:records.length});
+}
+
+function getAnalytics(ss, store, month) {
+  const vSheet = getSheet(ss, SH.VITALS);
+  const data   = vSheet.getDataRange().getValues();
+  if (data.length<=1) return jsonResp({kpis:{},days:[]});
+  const headers = data[0];
+  const rows = data.slice(1).filter(r=>{
+    const dt = String(r[headers.indexOf('Date')]||'');
+    const st = String(r[headers.indexOf('Store')]||'');
+    return dt.startsWith(month||'') && (!store||st===store);
+  });
+  let tBills=0,tSales=0,tItems=0,tWalk=0,tRev=0,tNew=0,tRep=0;
+  rows.forEach(r=>{
+    tBills+=parseFloat(r[headers.indexOf('Total Bills')]||0);
+    tSales+=parseFloat(r[headers.indexOf('Total Sales (Rs)')]||0);
+    tItems+=parseFloat(r[headers.indexOf('Total Items Sold')]||0);
+    tWalk +=parseFloat(r[headers.indexOf('Walk-ins')]||0);
+    tRev  +=parseFloat(r[headers.indexOf('Google Reviews')]||0);
+    tNew  +=parseFloat(r[headers.indexOf('New Customers')]||0);
+    tRep  +=parseFloat(r[headers.indexOf('Repeat Customers')]||0);
+  });
+  const daily={};
+  rows.forEach(r=>{
+    const dt=String(r[headers.indexOf('Date')]||'');
+    if(!daily[dt]) daily[dt]={bills:0,sales:0};
+    daily[dt].bills+=parseFloat(r[headers.indexOf('Total Bills')]||0);
+    daily[dt].sales+=parseFloat(r[headers.indexOf('Total Sales (Rs)')]||0);
+  });
+  return jsonResp({
+    kpis:{
+      totalBills:tBills, totalSales:tSales, totalItems:tItems,
+      avgBill: tBills>0?Math.round(tSales/tBills):0,
+      avgItem: tItems>0?Math.round(tSales/tItems):0,
+      totalWalkin:tWalk,
+      conversion:tWalk>0?Math.round((tBills/tWalk)*100):0,
+      totalReviews:tRev, totalNew:tNew, totalRepeat:tRep,
+      daysWithData:rows.length
+    },
+    days: Object.entries(daily)
+      .sort((a,b)=>a[0].localeCompare(b[0]))
+      .map(([date,v])=>({date,bills:v.bills,sales:v.sales}))
+  });
+}
+
+// Get link for specific photo from Camera sheet
+function getPhotoLink(ss, store, date, category, staffName) {
+  try {
+    const sheet = getSheet(ss, SH.CAMERA);
+    const data  = sheet.getDataRange().getValues();
+    if (data.length <= 1) return jsonResp({ status:'ok', url:'' });
+    // Search from bottom (most recent)
+    for (let i = data.length-1; i >= 1; i--) {
+      const row = data[i];
+      // Columns: Timestamp, Store, Date, By, Category, StaffName, DriveLink...
+      const rowStore    = String(row[1]||'');
+      const rowDate     = String(row[2]||'');
+      const rowCategory = String(row[4]||'');
+      const rowStaff    = String(row[5]||'');
+      const rowLink     = String(row[6]||'');
+      if (rowStore===store && rowDate===date &&
+          rowCategory===category &&
+          (!staffName || rowStaff===staffName) &&
+          rowLink && rowLink.includes('drive.google.com')) {
+        return jsonResp({ status:'ok', url: rowLink });
+      }
+    }
+    return jsonResp({ status:'ok', url:'' });
+  } catch(err) {
+    return jsonResp({ status:'error', message: err.toString() });
+  }
+}
+
+function getSheetData(ss, sheetName, store, dateOrMonth) {
+  const sheet = getSheet(ss, sheetName);
+  const data  = sheet.getDataRange().getValues();
+  if (data.length<=1) return jsonResp({records:[]});
+  const headers = data[0];
+  let records = data.slice(1).map(row=>{
+    const obj={};
+    headers.forEach((h,i)=>{ obj[String(h)]=row[i]!==undefined?String(row[i]):''; });
+    return obj;
+  });
+  if(store) records=records.filter(r=>r['Store']===store||r['store']===store);
+  if(dateOrMonth) records=records.filter(r=>(r['Date']||r['date']||'').startsWith(dateOrMonth));
+  records.reverse();
+  return jsonResp({records});
+}
+
+// ════════════════════════════════════════════════════════════════════
+// UTILITY FUNCTIONS
+// ════════════════════════════════════════════════════════════════════
+function nowIST() {
+  return new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+}
+function getSheet(ss,name) {
+  return ss.getSheetByName(name) || ss.insertSheet(name);
+}
+function isEmpty(s) { return s.getLastRow()===0; }
+function appendRow(s, row) { s.appendRow(row); }
+function styleHeader(s) {
+  const cols = Math.max(s.getLastColumn(),1);
+  const rng  = s.getRange(1,1,1,cols);
+  rng.setBackground('#1A1A1A').setFontColor('#FFFFFF')
+     .setFontWeight('bold').setFontSize(10).setWrap(true);
+  s.setFrozenRows(1);
+  s.setRowHeight(1,34);
+}
+function jsonResp(obj) {
+  // Add CORS headers so browser can read the response
+  const output = ContentService.createTextOutput(JSON.stringify(obj));
+  output.setMimeType(ContentService.MimeType.JSON);
+  return output;
+}
+
+// doOptions handles CORS preflight
+function doOptions(e) {
+  return ContentService.createTextOutput('')
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+function safeParam(e,key) {
+  return (e && e.parameter && e.parameter[key]) ? e.parameter[key] : '';
+}
+
+// ════════════════════════════════════════════════════════════════════
+// TEST FUNCTIONS — run these one by one to verify
+// ════════════════════════════════════════════════════════════════════
+
+// RUN THIS FIRST — creates all sheet tabs
+function createAllSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const allSheets = [
+    SH.CHECKLIST, SH.ATTENDANCE, 'Attendance Summary',
+    SH.CAMERA, SH.GROOMING,
+    SH.PRODUCTIVITY, 'Productivity Detail',
+    SH.TASKS, SH.DIGITAL,
+    SH.STAFF_ASSIGN, SH.TRAINING,
+    SH.LEAVE, SH.INTERCHANGE,
+    SH.WA_GROUPS, SH.VITALS, SH.LOG
+  ];
+  allSheets.forEach(name => {
+    const exists = !!ss.getSheetByName(name);
+    Logger.log((exists ? '✅ Already exists: ' : '✅ Created: ') + name);
+    if (!exists) ss.insertSheet(name);
+  });
+  Logger.log('\n🎉 All '+allSheets.length+' sheets ready!');
+}
+
+// RUN SECOND — confirms connection
+function testSetup() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  Logger.log('✅ Spreadsheet: ' + ss.getName());
+  Logger.log('✅ Owner email: ' + OWNER_EMAIL);
+  Logger.log('✅ Sheets: ' + ss.getSheets().map(s=>s.getName()).join(', '));
+  Logger.log('✅ All good — ready to Deploy!');
+}
+
+// RUN THIRD — sends test email
+function testEmail() {
+  MailApp.sendEmail(OWNER_EMAIL,
+    '✅ BE App — Connection Confirmed!',
+    'Your Bhartia Enterprises App is connected to Google Sheets!\n\n'+
+    'Email alerts will come to: '+OWNER_EMAIL+'\n\n'+
+    'Sheets connected:\n'+
+    '• Checklists\n• Attendance\n• Camera Reports\n• Staff Grooming\n'+
+    '• Productivity\n• Tasks\n• Digital Media\n• Staff Assignment\n'+
+    '• Training\n• Leave Applications\n• Staff Interchange\n'+
+    '• Daily Vitals\n• All Records\n\n'+
+    'Setup complete! ✅'
+  );
+  Logger.log('✅ Test email sent to '+OWNER_EMAIL);
+}
+
+// RUN FOURTH — writes sample data to all sheets
+function testFullSubmission() {
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const now = nowIST();
+  const today = new Date().toISOString().slice(0,10);
+
+  const d = {
+    type_:'checklist', sheetType:'closing', store:'BC',
+    manager:'Sikander', date:today, time:'21:00',
+    supervisor:'Neel', filledBy:'Manager',
+    checks: JSON.stringify({
+      infra_prayer:true, infra_vision:true, infra_lights:true,
+      infra_floor:true, cbill_erp:true, cbill_cash:true, cbill_upi:true,
+      cstaff_targets:true, cstaff_lockup:true
+    }),
+    figures: JSON.stringify({
+      bills:'20', total_sales:'60000', items:'42',
+      newcust:'14', repeat:'6', walkin:'32',
+      rbsold:'5', review:'3', waviews:'180',
+      wareply:'8', fbreply:'12', instreply:'6',
+      coupon:'10', contacts:'35', total_videos:'2'
+    }),
+    staffTasks: JSON.stringify({
+      'Ramu':    [{desc:'Stock setting - men section',pri:'normal',done:true},
+                  {desc:'Numbering new arrivals',pri:'urgent',done:false}],
+      'Sikander':[{desc:'ERP billing done',pri:'normal',done:true}],
+      'Krishna': [{desc:'Trial room cleaning',pri:'low',done:true}]
+    }),
+    training: JSON.stringify({
+      'Ramu':    {subject:'Sales pitch for kurta',mins:'20',result:'Good response'},
+      'Sikander':{subject:'ERP billing speed',mins:'15',result:'Improved'}
+    }),
+    leaveApps: JSON.stringify([
+      {name:'Bijay',type:'sick',from:today,to:today,reason:'Fever',granted:'yes'}
+    ]),
+    interchanges: JSON.stringify([
+      {name:'Kundan',from:'VKS',to:'BC',direction:'in'}
+    ]),
+    waGroups: JSON.stringify([
+      {group:'BC Wedding Clients',count:'12',from:'2026-05-01',to:today}
+    ]),
+    presentStaff: JSON.stringify(['Ramu','Sikander','Krishna','Kundan']),
+    priorities: JSON.stringify(['Complete numbering','Call MKK supplier','Update WA status']),
+    priAssign:  JSON.stringify(['Ramu','Sikander','Krishna']),
+    impWork: 'Clear RB stock - wedding season push',
+    mgrNotes: 'Good day — 20 bills. Ramu performed well.',
+    submittedAt: new Date().toISOString()
+  };
+
+  handleChecklist(ss, d, now);
+  logRecord(ss, d, now);
+  Logger.log('✅ Test submission complete!');
+  Logger.log('📊 Check these sheets: Checklists, Staff Assignment, Digital Media, Training, Leave Applications, Daily Vitals');
+}
