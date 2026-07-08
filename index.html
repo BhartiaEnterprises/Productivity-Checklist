@@ -841,9 +841,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
 .user-chip{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.15);border-radius:20px;padding:3px 10px 3px 3px;cursor:pointer}
 .user-chip-avatar{width:24px;height:24px;border-radius:50%;background:var(--gold);color:#1a1a1a;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center}
 .user-chip-name{font-size:11px;color:#fff;font-weight:600}
+/* ── STICKY CHECKLIST NAV ── */
+.cl-sticky-nav{position:sticky;bottom:0;left:0;right:0;background:#fff;border-top:2px solid var(--border);padding:8px 12px;display:flex;gap:8px;z-index:50;box-shadow:0 -4px 12px rgba(0,0,0,.08);margin:0 -12px}
+.cl-sticky-nav .btn{flex:1;margin:0}
+.cl-sticky-nav.hidden{display:none}
 </style>
 </head>
 <body>
+<!-- ALWAYS-VISIBLE SWITCH USER BUTTON -->
+<button id="force-switch-user" onclick="forceShowLogin()" style="position:fixed;top:8px;right:8px;z-index:800;background:#c62828;color:#fff;border:none;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,.3)">🔄 Login / Switch</button>
 <!-- ══════════════ ROLE-BASED LOGIN ══════════════ -->
 <div class="login-overlay" id="login-overlay">
   <div class="login-card">
@@ -906,6 +912,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
         <div class="sel-grid">
           <div class="sel-card" id="sel-bc" onclick="clSelectStore('BC')" ontouchstart="" ontouchend="handleStoreTouch('BC',event)" role="button" tabindex="0"><div class="ico">🏪</div><div class="ttl">Bhartia Collection</div><div class="sub hi">BC — Full Family Fashion</div><div class="sel-tick" id="tick-bc" style="display:none;margin-top:6px;font-size:12px;font-weight:700;color:var(--gold)">✓ चुना</div></div>
           <div class="sel-card" id="sel-vks" onclick="clSelectStore('VKS')" ontouchstart="" ontouchend="handleStoreTouch('VKS',event)" role="button" tabindex="0"><div class="ico">👘</div><div class="ttl">Veer Kunwar Sa</div><div class="sub hi">VKS — Men's Ethnic</div><div class="sel-tick" id="tick-vks" style="display:none;margin-top:6px;font-size:12px;font-weight:700;color:var(--gold)">✓ चुना</div></div>
+          <div class="sel-card" id="sel-ho" onclick="clSelectStore('HO')" ontouchstart="" ontouchend="handleStoreTouch('HO',event)" role="button" tabindex="0"><div class="ico">🏢</div><div class="ttl">Head Office</div><div class="sub hi">HO — Warehouse</div><div class="sel-tick" id="tick-ho" style="display:none;margin-top:6px;font-size:12px;font-weight:700;color:var(--gold)">✓ चुना</div></div>
         </div>
       </div>
       <div class="card">
@@ -933,9 +940,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
             </select><div id="cl-role-hint" style="font-size:10px;color:var(--gold);margin-top:4px;font-weight:600"></div></div>
           <div class="field"><label data-hi="आपका नाम" data-en="Your Name">आपका नाम</label>
             <select id="cl-manager"><option value="">-- चुनें --</option>
-              <optgroup label="BC"><option>Ramu</option><option>Abhishek</option><option>Sikander</option><option>Bijay</option><option>Kesri</option><option>Krishna</option></optgroup>
-              <optgroup label="VKS"><option>Kundan</option><option>Aakash</option><option>Akbar</option></optgroup>
-              <optgroup label="Head Office"><option>PC HO</option><option>Neel (Owner)</option></optgroup>
+              <optgroup label="BC"><option>Ramu</option><option>Sikander</option><option>Bijay</option><option>Kesri</option><option>Krishna</option></optgroup>
+              <optgroup label="VKS"><option>Kundan</option><option>Aakash</option><option>Akbar</option><option>Abhishek</option></optgroup>
+              <optgroup label="Head Office"><option>Abhishek</option><option>PC HO</option><option>Neel (Owner)</option></optgroup>
             </select></div>
           <div class="field"><label data-hi="तारीख" data-en="Date">तारीख</label><input type="date" id="cl-date"></div>
           <div class="field"><label data-hi="वास्तविक समय" data-en="Actual Time">वास्तविक समय</label><input type="time" id="cl-time"></div>
@@ -958,6 +965,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
     </div>
     <!-- STEP 2 -->
     <div class="cl-section" id="cl-s2">
+      <div class="cl-sticky-nav" id="cl-sticky-top">
+        <button class="btn" onclick="clPrevStep()">← <span class="hi">वापस / Back</span></button>
+        <button class="btn primary" onclick="clNextStep()"><span class="hi">आगे / Next</span> →</button>
+      </div>
       <div id="cl-checklist-body"></div>
       <div class="btn-row">
         <button class="btn" onclick="clPrevStep()" data-hi="← वापस" data-en="← Back">← वापस</button>
@@ -1106,8 +1117,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
           <option value="BC">BC</option>
           <option value="VKS">VKS</option>
         </select></div>
-      <div class="field"><label data-hi="तारीख" data-en="Date">तारीख</label>
+      <div class="field"><label data-hi="तारीख से" data-en="From Date">तारीख से</label>
         <input type="date" id="rep-date-filter" onchange="filterReports()"></div>
+      <div class="field"><label data-hi="तारीख तक" data-en="To Date">तारीख तक</label>
+        <input type="date" id="rep-date-to" onchange="filterReports()"></div>
       <div class="field"><label data-hi="प्रकार" data-en="Type">प्रकार</label>
         <select id="rep-type-filter" onchange="filterReports()">
           <option value="">All / सभी</option>
@@ -1115,6 +1128,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
           <option value="closing">Closing</option>
           <option value="attendance">Attendance</option>
         </select></div>
+      <div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap"><button class="btn" style="font-size:10px;padding:5px 10px" onclick="repQuickRange(&#39;today&#39;)">आज</button><button class="btn" style="font-size:10px;padding:5px 10px" onclick="repQuickRange(&#39;week&#39;)">हफ्ता</button><button class="btn" style="font-size:10px;padding:5px 10px" onclick="repQuickRange(&#39;month&#39;)">महीना</button><button class="btn" style="font-size:10px;padding:5px 10px" onclick="repQuickRange(&#39;lastmonth&#39;)">पिछला महीना</button><button class="btn" style="font-size:10px;padding:5px 10px" onclick="repQuickRange(&#39;clear&#39;)">सभी</button></div>
       <button class="btn" style="flex:0;padding:8px 14px;align-self:flex-end" onclick="loadReports()">🔄</button>
     </div>
     <div class="rep-stats">
@@ -1149,7 +1163,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
     <div class="cmd-store-grid">
       <!-- BC -->
       <div class="cmd-store-card">
-        <div class="cmd-store-hdr bc">
+        <div class="cmd-store-hdr bc" data-store-card="BC">
           <span>🏪 BC</span>
           <span id="cmd-bc-pct" style="font-size:10px">—</span>
         </div>
@@ -1162,7 +1176,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
       </div>
       <!-- VKS -->
       <div class="cmd-store-card">
-        <div class="cmd-store-hdr vks">
+        <div class="cmd-store-hdr vks" data-store-card="VKS">
           <span>👘 VKS</span>
           <span id="cmd-vks-pct" style="font-size:10px">—</span>
         </div>
@@ -1496,7 +1510,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
     <div style="display:flex;gap:6px;margin-bottom:10px">
       <button class="btn" id="prod-sub-ts" onclick="setProdSub('timesheet')" style="flex:1;font-size:12px;background:var(--dark);color:#fff;border-color:var(--dark)">⏱️ <span class="hi">टाइमशीट</span></button>
       <button class="btn" id="prod-sub-sme" onclick="setProdSub('sme')" style="flex:1;font-size:12px">📱 <span class="hi">Social Exec</span></button>
-      <button class="btn" id="prod-sub-be" onclick="setProdSub('billing')" style="flex:1;font-size:12px">💳 <span class="hi">Billing Exec</span></button>
+      <button class="btn" id="prod-sub-be" onclick="setProdSub('billing')" style="flex:1;font-size:12px">💳 <span class="hi">Billing</span></button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button class="btn" id="prod-sub-inv" onclick="setProdSub('inventory')" style="flex:1;font-size:12px">📦 <span class="hi">Inventory</span></button>
+      <button class="btn" id="prod-sub-crm" onclick="setProdSub('crm')" style="flex:1;font-size:12px">💬 <span class="hi">CRM</span></button>
+      <button class="btn" id="prod-sub-bda" onclick="setProdSub('bda')" style="flex:1;font-size:12px">🤝 <span class="hi">BDA</span></button>
+      <button class="btn" id="prod-sub-train" onclick="setProdSub('training')" style="flex:1;font-size:12px">🎓 <span class="hi">Training</span></button>
     </div>
     <!-- TIMESHEET VIEW -->
     <div id="prod-timesheet-view">
@@ -1593,6 +1613,88 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
       <button class="btn gold" style="width:100%;margin-bottom:10px" onclick="beAddCustomer()">➕ <span class="hi">नया ग्राहक जोड़ें / New Customer</span></button>
       <div id="be-customers"></div>
       <button class="btn green" style="width:100%;margin-top:10px" onclick="submitBilling()">✓ <span class="hi">Billing Report जमा करें</span></button>
+    </div>
+    <!-- INVENTORY VIEW -->
+    <div id="prod-inventory-view" style="display:none">
+      <div class="sme-toolbar">
+        <div class="field" style="flex:1;min-width:130px">
+          <label class="hi" style="font-size:10px">स्थान / Location</label>
+          <select id="inv-loc" onchange="renderInventory()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+            <option value="HO Warehouse">🏢 HO Warehouse (Main)</option>
+            <option value="BC Store">🏪 BC Store</option>
+            <option value="BC Duchatti">🪜 BC Duchatti</option>
+            <option value="VKS Store">👘 VKS Store</option>
+            <option value="VKS Narrow">📏 VKS Narrow Space</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;min-width:110px">
+          <label class="hi" style="font-size:10px">तारीख</label>
+          <input type="date" id="inv-date" onchange="renderInventory()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+        </div>
+        <div class="field" style="flex:1;min-width:110px">
+          <label class="hi" style="font-size:10px">Inventory Exec</label>
+          <input type="text" id="inv-name" placeholder="नाम..." onchange="saveInvName()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+        </div>
+      </div>
+      <div id="inv-body"></div>
+      <button class="btn green" style="width:100%;margin-top:10px" onclick="submitInventory()">✓ <span class="hi">Inventory Report जमा करें</span></button>
+    </div>
+    <!-- CRM VIEW -->
+    <div id="prod-crm-view" style="display:none">
+      <div class="sme-toolbar">
+        <div class="field" style="flex:1;min-width:100px">
+          <label class="hi" style="font-size:10px">दुकान</label>
+          <select id="crm-store" onchange="renderCRM()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+            <option value="BC">BC</option><option value="VKS">VKS</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;min-width:110px">
+          <label class="hi" style="font-size:10px">तारीख</label>
+          <input type="date" id="crm-date" onchange="renderCRM()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+        </div>
+        <div class="field" style="flex:1;min-width:110px">
+          <label class="hi" style="font-size:10px">CRM Exec</label>
+          <input type="text" id="crm-name" placeholder="नाम..." onchange="saveCRMName()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+        </div>
+      </div>
+      <div id="crm-body"></div>
+      <button class="btn green" style="width:100%;margin-top:10px" onclick="submitCRM()">✓ <span class="hi">CRM Report जमा करें</span></button>
+    </div>
+    <!-- BDA VIEW -->
+    <div id="prod-bda-view" style="display:none">
+      <div class="sme-toolbar">
+        <div class="field" style="flex:1;min-width:100px">
+          <label class="hi" style="font-size:10px">Store</label>
+          <select id="bda-store" onchange="renderBDA()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+            <option value="VKS">VKS</option><option value="BC">BC</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;min-width:110px">
+          <label class="hi" style="font-size:10px">तारीख</label>
+          <input type="date" id="bda-date" onchange="renderBDA()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+        </div>
+        <div class="field" style="flex:1;min-width:110px">
+          <label class="hi" style="font-size:10px">BDA नाम</label>
+          <input type="text" id="bda-name" placeholder="नाम..." onchange="saveBDAName()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+        </div>
+      </div>
+      <div id="bda-body"></div>
+      <button class="btn green" style="width:100%;margin-top:10px" onclick="submitBDA()">✓ <span class="hi">BDA Report जमा करें</span></button>
+    </div>
+    <!-- TRAINING VIEW (all executives) -->
+    <div id="prod-training-view" style="display:none">
+      <div class="sme-toolbar">
+        <div class="field" style="flex:1;min-width:130px">
+          <label class="hi" style="font-size:10px">आपका नाम</label>
+          <input type="text" id="train-name" placeholder="नाम..." onchange="saveTrainName()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+        </div>
+        <div class="field" style="flex:1;min-width:110px">
+          <label class="hi" style="font-size:10px">तारीख</label>
+          <input type="date" id="train-date" onchange="renderTraining()" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+        </div>
+      </div>
+      <div id="train-body"></div>
+      <button class="btn green" style="width:100%;margin-top:10px" onclick="submitTraining()">✓ <span class="hi">Training पूरा — जमा करें</span></button>
     </div>
   </div>
 </div>
@@ -1798,11 +1900,12 @@ function switchTab(tab){
     if(page) page.classList.add('active');
     if(nav)  nav.classList.add('active');
     try{ if(tab==='attendance')   renderAttendance();   }catch(e){console.warn('renderAttendance:',e);}
+    try{ if(tab==='checklist')    prefillChecklistFromLogin(); }catch(e){}
     try{ if(tab==='reports')      initReports();         }catch(e){console.warn('initReports:',e);}
     try{ if(tab==='planner')      renderPlanner();       }catch(e){console.warn('planner:',e);}
     try{ if(tab==='tasks'){ carryForwardTasks(); renderMyTasks(); updateTaskCounts(); }}catch(e){console.warn('tasks:',e);}
     try{ if(tab==='camera')       initCamera();          }catch(e){console.warn('initCamera:',e);}
-    try{ if(tab==='productivity'){ prodLoadEmployees(); var sd=document.getElementById('sme-date'); if(sd&&!sd.value) sd.value=todayStr2(); var bd=document.getElementById('be-date'); if(bd&&!bd.value) bd.value=todayStr2(); } }catch(e){console.warn('productivity:',e);}
+    try{ if(tab==='productivity'){ prodLoadEmployees(); var sd=document.getElementById('sme-date'); if(sd&&!sd.value) sd.value=todayStr2(); var bd=document.getElementById('be-date'); if(bd&&!bd.value) bd.value=todayStr2(); applyProdSubTabScope(); } }catch(e){console.warn('productivity:',e);}
     try{ if(tab==='analytics')    renderAnalytics();     }catch(e){console.warn('renderAnalytics:',e);}
     try{ if(tab==='dashboard'){ const t=todayStr2(); if(allReports.length>0) renderDashboardContent(t); else refreshDashboard(); }}catch(e){console.warn('dashboard:',e);}
     window.scrollTo(0,0);
@@ -2060,6 +2163,7 @@ function buildClChecklist(){
     addSec(lang==='hi'?'2  बिक्री और बिलिंग':'2  Sales & Billing',CLOSE_BILLING,'blue','cbill');
     addSec(lang==='hi'?'3  फर्श और माल':'3  Floor & Merchandise',CLOSE_FLOOR,'green','cfloor');
     addSec(lang==='hi'?'4  स्टाफ और सुरक्षा':'4  Staff & Security',CLOSE_STAFF,'purple','cstaff');
+    html+=buildClosingPendingTasks();
     // EOD TASK SUMMARY
     html+=`<div class="sec-hdr" style="background:#1B5E20;margin-top:14px"><span class="hi">${lang==='hi'?'5  आज का काम — पूरा vs बाकी (कैटेगरी अनुसार)':'5  Today\'s Work — Done vs Pending (Category-wise)'}</span></div>
     <div class="sec-body">
@@ -2098,6 +2202,12 @@ function buildClChecklist(){
   // NOTES
   html+=`<div class="sec-hdr gold hi">${lang==='hi'?'प्रबंधक समीक्षा नोट्स':'Manager Review Notes'}</div><div class="sec-body"><div class="notes-wrap"><label class="hi">${lang==='hi'?'समस्याएं / कार्रवाई / फॉलो-अप':'Issues / Action / Follow-up'}</label><textarea onchange="clState.mgrNotes=this.value" placeholder="${lang==='hi'?'यहाँ लिखें...':'Write here...'}">${clState.mgrNotes}</textarea></div></div><div class="spacer"></div>`;
   html+=`<div class="sec-hdr blue hi">${lang==='hi'?'रणनीतिक समीक्षा (मालिक/ओनर)':'Strategic Review (Owner)'}</div><div class="sec-body"><div class="notes-wrap"><label>${lang==='hi'?'रणनीतिक अवलोकन / निर्देश':'Strategic Observations / Directives'}</label><textarea onchange="clState.rsNotes=this.value" placeholder="${lang==='hi'?'रणनीतिकार नोट्स...':'Strategist notes...'}">${clState.rsNotes}</textarea></div></div><div class="spacer"></div>`;
+  // Sales-only staff get the simple salesman checklist; managers get full
+  if(typeof isSalesOnly==='function' && isSalesOnly()){
+    document.getElementById('cl-checklist-body').innerHTML=buildSalesmanChecklist();
+    return;
+  }
+  html = buildMgrStaffToggle(st) + html;
   document.getElementById('cl-checklist-body').innerHTML=html;
 }
 function buildClFigures(){
@@ -2117,6 +2227,7 @@ function buildClFigures(){
   <div style="background:var(--gold-light);border:1px solid var(--gold);border-radius:10px;padding:12px;font-size:12px;line-height:1.7">
     ${lang==='hi'?'✅ अगले स्टेप में जमा करने से पहले समीक्षा करें।':'✅ Review your submission in the next step before submitting.'}
   </div>`;
+  var _pb=buildPendingSummaryBlock(st); if(_pb) document.getElementById('cl-figures-body').innerHTML += _pb;
 }
 function buildClReview(){
   const mgr=document.getElementById('cl-manager')?.value||'';
@@ -2146,6 +2257,7 @@ async function clSubmit(){
   const time=document.getElementById('cl-time')?.value||'';
   const sup=document.getElementById('cl-supervisor')?.value||'';
   const fb=document.getElementById('cl-filledby')?.value||'';
+  const role=document.getElementById('cl-role')?.value||'';
   document.getElementById('cl-s4').style.display='none';
   document.getElementById('cl-loading').style.display='block';
   const payload={type_:'checklist',store:clState.store,sheetType:clState.type,manager:mgr, role:role,date,time,supervisor:sup,filledBy:fb,
@@ -2156,6 +2268,14 @@ async function clSubmit(){
   await sendToSheets(payload);
   document.getElementById('cl-loading').style.display='none';
   document.getElementById('cl-success').style.display='block';
+  // Award points for filling checklist
+  try{
+    var _who=(document.getElementById('cl-manager')||{}).value||'';
+    if(_who){
+      var bd=[{reason:(lang==='hi'?'Checklist section':'Checklist section'),pts:POINT_RULES.section_fill}];
+      awardFormPoints(_who,(clState.type==='opening'?'Opening':'Closing')+' Checklist',bd);
+    }
+  }catch(e){console.warn('points:',e);}
   const checked=Object.values(clState.checks).filter(v=>v===true||Array.isArray(v)&&v.length>0).length;
   document.getElementById('cl-success-msg').textContent=`${clState.store} ${clState.type} — ${mgr} — ${date}`;
   showNavGuide(clState.type);
@@ -2244,6 +2364,8 @@ async function attSubmit(){
   document.getElementById('att-loading').style.display='block';
   const payload={type_:'attendance',store,date,supervisor:sup,attendance:JSON.stringify(attState),submittedAt:new Date().toISOString()};
   await sendToSheets(payload);
+  try{ var _sup=sup||''; if(_sup) awardFormPoints(_sup,'Attendance',[{reason:(lang==='hi'?'Attendance मार्क':'Attendance marked'),pts:POINT_RULES.section_fill}]); }catch(e){}
+  try{ awardAttendanceBehaviorPoints(); }catch(e){console.warn('behavior pts:',e);}
   document.getElementById('att-loading').style.display='none';
   document.getElementById('att-success').style.display='block';
   document.getElementById('att-success-msg').textContent=`${store} — ${date}`;
@@ -2291,12 +2413,16 @@ async function loadReports(){
 }
 function filterReports(){
   const store=document.getElementById('rep-store-filter').value;
-  const date=document.getElementById('rep-date-filter').value;
+  const dateFrom=document.getElementById('rep-date-filter').value;
+  const dateTo=(document.getElementById('rep-date-to')||{}).value||'';
   const type=document.getElementById('rep-type-filter').value;
-  const today=new Date().toISOString().slice(0,10);
+  const today=todayStr2();
   let filtered=allReports.filter(r=>{
     if(store&&r.store!==store)return false;
-    if(date&&r.date!==date)return false;
+    // Date range filter (from–to). If only 'from' set, exact match that day.
+    if(dateFrom && dateTo){ if(r.date < dateFrom || r.date > dateTo) return false; }
+    else if(dateFrom){ if(r.date !== dateFrom) return false; }
+    else if(dateTo){ if(r.date > dateTo) return false; }
     if(type&&r.type_!==type&&r.sheetType!==type)return false;
     return true;
   });
@@ -2347,6 +2473,18 @@ function filterReports(){
       <div class="rep-detail" id="rd-${idx}"><div class="rep-att-grid">${detailHtml}</div></div>
     </div>`;
   }).join('');
+  // Compliance one-pager
+  try{
+    var _cStore=document.getElementById('rep-store-filter').value;
+    var _cFrom=document.getElementById('rep-date-filter').value;
+    var _cTo=(document.getElementById('rep-date-to')||{}).value||_cFrom;
+    if(_cFrom){
+      var cp=document.getElementById('rep-compliance');
+      if(!cp){ cp=document.createElement('div'); cp.id='rep-compliance'; cp.style.cssText='max-width:700px;margin:0 auto;padding:0 12px';
+        var rt=document.getElementById('tab-reports'); if(rt) rt.appendChild(cp); }
+      if(cp) cp.innerHTML=buildComplianceOnePager(_cStore, _cFrom, _cTo);
+    }
+  }catch(e){console.warn('compliance:',e);}
 }
 function toggleRepDetail(idx){
   const el=document.getElementById('rd-'+idx);
@@ -2566,8 +2704,8 @@ function getStaffList(){
   }catch(e){}
   // Default staff
   return {
-    BC:  ['Ramu','Abhishek','Sikander','Bijay','Kesri','Krishna'],
-    VKS: ['Kundan','Aakash','Akbar']
+    BC:  ['Ramu','Sikander','Bijay','Kesri','Krishna'],
+    VKS: ['Kundan','Aakash','Akbar','Abhishek']
   };
 }
 function saveStaffList(list){
@@ -2616,7 +2754,12 @@ let modalContext      = null; // checklist item context if opened from inline
 // ── STORAGE ──
 function loadTasks(){ try{ return JSON.parse(localStorage.getItem(TASK_KEY)||'[]'); }catch(e){return[];} }
 function saveTasks(tasks){ localStorage.setItem(TASK_KEY, JSON.stringify(tasks)); }
-function todayStr2(){ return new Date().toISOString().slice(0,10); }
+function todayStr2(){
+  // IST date (UTC+5:30) so late-evening tasks don't roll to next day
+  var d=new Date();
+  var ist=new Date(d.getTime()+(330+d.getTimezoneOffset())*60000);
+  return ist.getFullYear()+'-'+String(ist.getMonth()+1).padStart(2,'0')+'-'+String(ist.getDate()).padStart(2,'0');
+}
 // ── AUTO CARRY FORWARD (runs on app init + tasks tab open) ──
 function carryForwardTasks(){
   const today = todayStr2();
@@ -2661,7 +2804,15 @@ function populateOwnerMgrFilter(){
 function renderMyTasks(){
   const who = document.getElementById('task-whoami')?.value || '';
   const today = todayStr2();
-  let tasks = loadTasks().filter(t => t.date === today || t.carried);
+  let tasks = loadTasks().filter(t => {
+    if(t.status==='done' && t.doneAt && t.doneAt.slice(0,10)===today) return true; // done today
+    if(t.status==='done') return false; // hide old done
+    // Pending: show if created today, carried, or due on/before today
+    if(t.date===today) return true;
+    if(t.carried) return true;
+    if(t.due && t.due <= today) return true;
+    return t.date===today;
+  });
   // count for badges
   const pending  = tasks.filter(t=>t.status==='pending').length;
   const urgent   = tasks.filter(t=>t.status==='pending'&&t.priority==='urgent').length;
@@ -3148,7 +3299,7 @@ function renderMultiTaskStaff(nm){
       </select>
       <button class="multi-task-del" onclick="removeStaffTask('${nm}',${i})">×</button>
     </div>`).join('');
-  return `<div class="multi-task-wrap">
+  return `<div class="multi-task-wrap" data-staff-row="${nm}">
     <div class="multi-task-staff-hdr">
       <span class="multi-task-staff-name">👤 ${nm}</span>
       <button class="multi-task-add-btn" onclick="addStaffTask('${nm}')">+ ${lang==='hi'?'काम जोड़ें':'Add Task'}</button>
@@ -3583,6 +3734,7 @@ async function submitCameraReport(){
     submittedAt : new Date().toISOString()
   };
   await sendToSheets(payload);
+  try{ var _s=(document.getElementById('cam-supervisor')||document.getElementById('cam-store')||{}).value||''; var _who=(document.getElementById('cl-manager')||{}).value||_s; if(_who) awardFormPoints(_who,'Camera & Grooming',[{reason:(lang==='hi'?'Camera/Grooming':'Camera/Grooming'),pts:POINT_RULES.section_fill}]); }catch(e){}
   document.getElementById('cam-success-msg').innerHTML =
     `✅ ${store} — ${by} — ${today}<br>
      <span style="font-size:12px;color:var(--green)">
@@ -4235,6 +4387,15 @@ function renderDashboardContent(today){
   }
   setS('cmd-bc-open',bcOpen); setS('cmd-bc-att',bcAtt); setS('cmd-bc-cam',bcCam); setS('cmd-bc-close',bcClose);
   setS('cmd-vks-open',vksOpen); setS('cmd-vks-att',vksAtt); setS('cmd-vks-cam',vksCam); setS('cmd-vks-close',vksClose);
+  // Store scoping: hide store cards the user can't see
+  try{
+    document.querySelectorAll('[data-store-card]').forEach(function(card){
+      var st=card.getAttribute('data-store-card');
+      var wrapper = card.closest ? (card.closest('.cmd-store-card')||card.parentElement) : card.parentElement;
+      var show = (typeof canSeeStore==='function') ? canSeeStore(st) : true;
+      if(wrapper) wrapper.style.display = show ? '' : 'none';
+    });
+  }catch(e){}
   var bcDone=[bcOpen,bcAtt,bcCam,bcClose].filter(Boolean).length;
   var vksDone=[vksOpen,vksAtt,vksCam,vksClose].filter(Boolean).length;
   var bcEl=document.getElementById('cmd-bc-pct'), vksEl=document.getElementById('cmd-vks-pct');
@@ -4248,7 +4409,7 @@ function renderDashboardContent(today){
   var flowList=document.getElementById('cmd-flow-list');
   if(flowList){
     var now=new Date(), hour=now.getHours(), firstPending=true;
-    flowList.innerHTML=AUTO_FLOW.map(function(step){
+    flowList.innerHTML=AUTO_FLOW.filter(function(step){ return (typeof canSeeStore==='function')?canSeeStore(step.store):true; }).map(function(step){
       var done=statusMap[step.id];
       var sh=parseInt(step.time.split(':')[0]);
       var isCurrent=!done&&firstPending&&sh<=hour+1;
@@ -4264,14 +4425,16 @@ function renderDashboardContent(today){
     }).join('');
   }
   var alerts=[], h2=new Date().getHours();
-  if(h2>=11&&!bcOpen)  alerts.push({icon:'⚠️',text:'BC Opening checklist not filled',tab:'checklist'});
-  if(h2>=11&&!vksOpen) alerts.push({icon:'⚠️',text:'VKS Opening checklist not filled',tab:'checklist'});
-  if(h2>=11&&!bcAtt)   alerts.push({icon:'👥',text:'BC Attendance not marked',tab:'attendance'});
-  if(h2>=11&&!vksAtt)  alerts.push({icon:'👥',text:'VKS Attendance not marked',tab:'attendance'});
-  if(h2>=12&&!bcCam)   alerts.push({icon:'📸',text:'BC Camera/Grooming not done',tab:'camera'});
-  if(h2>=12&&!vksCam)  alerts.push({icon:'📸',text:'VKS Camera/Grooming not done',tab:'camera'});
-  if(h2>=21&&!bcClose) alerts.push({icon:'🌙',text:'BC Closing checklist pending!',tab:'checklist'});
-  if(h2>=21&&!vksClose)alerts.push({icon:'🌙',text:'VKS Closing checklist pending!',tab:'checklist'});
+  var _seeBC = (typeof canSeeStore==='function') ? canSeeStore('BC') : true;
+  var _seeVKS= (typeof canSeeStore==='function') ? canSeeStore('VKS') : true;
+  if(_seeBC && h2>=11&&!bcOpen)  alerts.push({icon:'⚠️',text:'BC Opening checklist not filled',tab:'checklist'});
+  if(_seeVKS&& h2>=11&&!vksOpen) alerts.push({icon:'⚠️',text:'VKS Opening checklist not filled',tab:'checklist'});
+  if(_seeBC && h2>=11&&!bcAtt)   alerts.push({icon:'👥',text:'BC Attendance not marked',tab:'attendance'});
+  if(_seeVKS&& h2>=11&&!vksAtt)  alerts.push({icon:'👥',text:'VKS Attendance not marked',tab:'attendance'});
+  if(_seeBC && h2>=12&&!bcCam)   alerts.push({icon:'📸',text:'BC Camera/Grooming not done',tab:'camera'});
+  if(_seeVKS&& h2>=12&&!vksCam)  alerts.push({icon:'📸',text:'VKS Camera/Grooming not done',tab:'camera'});
+  if(_seeBC && h2>=21&&!bcClose) alerts.push({icon:'🌙',text:'BC Closing checklist pending!',tab:'checklist'});
+  if(_seeVKS&& h2>=21&&!vksClose)alerts.push({icon:'🌙',text:'VKS Closing checklist pending!',tab:'checklist'});
   var aEl=document.getElementById('cmd-alerts-list');
   if(aEl){
     aEl.innerHTML=alerts.length===0
@@ -4279,6 +4442,18 @@ function renderDashboardContent(today){
       :alerts.map(function(a){return '<div class="cmd-alert-item"><span class="cmd-alert-icon">'+a.icon+'</span><span class="cmd-alert-text">'+a.text+'</span><button class="cmd-alert-action" onclick="switchTab(' + JSON.stringify(a.tab) + ')">Fill →</button></div>';}).join('');
   }
   renderCmdStaffStatus(cmdStore, todayRecs);
+  // Render leaderboard
+  try{
+    var lb=document.getElementById('cmd-leaderboard');
+    if(!lb){
+      lb=document.createElement('div');
+      lb.id='cmd-leaderboard';
+      lb.style.cssText='max-width:700px;margin:16px auto 0;padding:0 12px';
+      var dashTab=document.getElementById('tab-dashboard');
+      if(dashTab) dashTab.appendChild(lb);
+    }
+    if(lb) lb.innerHTML=buildMyPointsCard()+buildLeaderboard();
+  }catch(e){console.warn('leaderboard:',e);}
 }
 function setCmdStore(store){
   cmdStore=store;
@@ -4579,6 +4754,7 @@ function renderPlanner(){
     + '<div class="planner-proj-row"><span class="planner-proj-lbl">🛍️ '+(lang==='hi'?'रोज़ RB चाहिए':'RB/day needed')+'</span><span class="planner-proj-val">'+(dailyRBNeeded>0?dailyRBNeeded:'✅')+'</span></div>'
     + '</div>';
   wrap.innerHTML = html;
+  try{ var tp=document.getElementById('planner-targets-panel'); if(!tp){ tp=document.createElement('div'); tp.id='planner-targets-panel'; if(wrap&&wrap.parentElement) wrap.parentElement.appendChild(tp); } if(tp) tp.innerHTML=buildTargetsPanel(planStore, month); }catch(e){console.warn('targets:',e);}
 }
 // ══════════════════════════════════════════════════════════════
 // DAILY TARGET CARD — shown at top of checklist Step 2
@@ -5177,8 +5353,8 @@ function smeNameKey(){ return 'be_sme_name_'+smeStore()+'_'+smeDate(); }
 function smeLoad(){ try{ return JSON.parse(localStorage.getItem(smeKey())||'{}'); }catch(e){ return {}; } }
 function smeSave(d){ localStorage.setItem(smeKey(), JSON.stringify(d)); }
 function setProdSub(sub){
-  var views={timesheet:'prod-timesheet-view', sme:'prod-sme-view', billing:'prod-billing-view'};
-  var btns ={timesheet:'prod-sub-ts', sme:'prod-sub-sme', billing:'prod-sub-be'};
+  var views={timesheet:'prod-timesheet-view', sme:'prod-sme-view', billing:'prod-billing-view', inventory:'prod-inventory-view', crm:'prod-crm-view', bda:'prod-bda-view', training:'prod-training-view'};
+  var btns ={timesheet:'prod-sub-ts', sme:'prod-sub-sme', billing:'prod-sub-be', inventory:'prod-sub-inv', crm:'prod-sub-crm', bda:'prod-sub-bda', training:'prod-sub-train'};
   Object.keys(views).forEach(function(k){
     var v=document.getElementById(views[k]); if(v) v.style.display=(k===sub)?'':'none';
     var b=document.getElementById(btns[k]);
@@ -5186,6 +5362,10 @@ function setProdSub(sub){
   });
   if(sub==='sme') renderSME();
   if(sub==='billing') renderBilling();
+  if(sub==='inventory') renderInventory();
+  if(sub==='crm') renderCRM();
+  if(sub==='bda') renderBDA();
+  if(sub==='training') renderTraining();
 }
 function saveSMEName(){
   var n=document.getElementById('sme-name');
@@ -5272,6 +5452,7 @@ async function submitSME(){
     executive:name, socialExecData:JSON.stringify(data),
     submittedAt:new Date().toISOString()
   });
+  try{ var _n=(document.getElementById('sme-name')||{}).value||''; if(_n) awardFormPoints(_n,'Social Media',[{reason:'Social Media filled',pts:POINT_RULES.section_fill}]); }catch(e){}
   toast('✅ '+(lang==='hi'?'Social Media Checklist जमा हुई':'Social Media Checklist submitted'));
 }
 // ── MANAGER SIDE: build sync table for the checklist Digital section ──
@@ -5490,6 +5671,7 @@ async function submitBilling(){
     executive:name, billingData:JSON.stringify(arr),
     submittedAt:new Date().toISOString()
   });
+  try{ var _n=(document.getElementById('billing-name')||{}).value||''; if(_n) awardFormPoints(_n,'Billing',[{reason:'Billing filled',pts:POINT_RULES.section_fill}]); }catch(e){}
   toast('✅ '+(lang==='hi'?'Billing Report जमा हुई':'Billing report submitted'));
 }
 // ── MANAGER SIDE: billing sync table ──
@@ -5578,13 +5760,33 @@ var CURRENT_USER = null;   // {name, store, roles:[]}
 var LOGIN_KEY = 'be_users_v1';       // stores {name: {store, roles}}
 var SESSION_KEY = 'be_session_v1';   // current logged-in user
 var ALL_ROLES = [
-  {id:'Manager',          icon:'👔', name:'प्रबंधक / Manager',            desc:'पूरी checklist + sync reports देखें',    tabs:['dashboard','checklist','attendance','tasks','camera','productivity','analytics','planner','reports']},
-  {id:'PC',               icon:'🏢', name:'PC / Head Office',            desc:'सभी stores देख/भर सकते हैं',              tabs:['dashboard','checklist','attendance','tasks','camera','productivity','analytics','planner','reports']},
-  {id:'Owner',            icon:'👑', name:'Owner / Neel',                desc:'सब कुछ access',                          tabs:['dashboard','checklist','attendance','tasks','camera','productivity','analytics','planner','reports']},
-  {id:'Employee',         icon:'🧑', name:'कर्मचारी / Employee',          desc:'अपने assigned task भरें',                tabs:['checklist','tasks','attendance']},
-  {id:'Social Media Exec',icon:'📱', name:'Social Media Executive',      desc:'Social media checklist भरें',            tabs:['productivity']},
-  {id:'Billing Exec',     icon:'💳', name:'Billing Executive',           desc:'Billing counter checklist भरें',         tabs:['productivity']}
+  {id:'Manager',          icon:'👔', name:'प्रबंधक / Manager',            desc:'पूरी checklist + sync reports + defacto Inventory',  tabs:['dashboard','checklist','attendance','tasks','camera','productivity','analytics','planner','reports']},
+  {id:'PC',               icon:'🏢', name:'PC / Head Office',            desc:'सभी stores + analytics',                 tabs:['dashboard','checklist','attendance','tasks','camera','productivity','analytics','planner','reports']},
+  {id:'Owner',            icon:'👑', name:'Owner / Neel',                desc:'सब कुछ + analytics',                     tabs:['dashboard','checklist','attendance','tasks','camera','productivity','analytics','planner','reports']},
+  {id:'Social Media Exec',icon:'📱', name:'Social Media Executive',      desc:'Social media checklist',                 tabs:['productivity']},
+  {id:'Billing Exec',     icon:'💳', name:'Billing / Sales-Ops',         desc:'Billing + bill making counter',          tabs:['productivity']},
+  {id:'Sales',            icon:'🛍️', name:'Sales / बिक्री',              desc:'Sales floor + daily training',           tabs:['checklist','tasks','attendance','productivity']},
+  {id:'Inventory',        icon:'📦', name:'Inventory Management',        desc:'Stock, barcode, replenishment (all locations)', tabs:['productivity']},
+  {id:'Telecaller',       icon:'📞', name:'Telecaller',                  desc:'Previous customers को call',             tabs:['productivity','tasks','attendance']},
+  {id:'CRM',              icon:'💬', name:'CRM Executive',               desc:'Customers को WA group में add करना',     tabs:['productivity']},
+  {id:'BDA',              icon:'🤝', name:'Business Development (BDA)',   desc:'Referral partnerships, wedding ecosystem', tabs:['productivity']},
+  {id:'Accountant',       icon:'🧮', name:'Accountant',                  desc:'Marg ERP expenses, accounts',            tabs:['productivity','tasks']}
 ];
+// ── HARDCODED ORG MAP (defaults; editable at login) ──
+var ORG_MAP = {
+  'Kundan':   {store:'VKS', roles:['Manager','Social Media Exec','Sales','CRM','BDA']},
+  'Sikander': {store:'BC',  roles:['Manager','Billing Exec','Inventory']},
+  'Bijay':    {store:'BC',  roles:['Social Media Exec','Billing Exec','Sales','Inventory']},
+  'Abhishek': {store:'HO',  roles:['Inventory','Billing Exec','Accountant'], altStores:['VKS']},
+  'Sunaina':  {store:'HO',  roles:['Telecaller']},
+  'Ramu':     {store:'BC',  roles:['Sales']},
+  'Kesri':    {store:'BC',  roles:['Sales']},
+  'Aakash':   {store:'VKS', roles:['Sales','Telecaller']},
+  'Akbar':    {store:'VKS', roles:['Sales','BDA']},
+  'Krishna':  {store:'BC',  roles:['Sales','Inventory']},
+  'PC HO':        {store:'HO', roles:['PC']},
+  'Neel (Owner)': {store:'HO', roles:['Owner']}
+};
 function getUsers(){ try{ return JSON.parse(localStorage.getItem(LOGIN_KEY)||'{}'); }catch(e){ return {}; } }
 function saveUsers(u){ localStorage.setItem(LOGIN_KEY, JSON.stringify(u)); }
 var _loginSelName=null, _loginSelStore=null, _loginSelRoles=[];
@@ -5605,12 +5807,12 @@ function renderLoginNames(){
   var html='';
   ['BC','VKS'].forEach(function(store){
     (staff[store]||[]).forEach(function(nm){
-      html+='<button class="login-name-btn" onclick="loginPickName(&quot;'+nm.replace(/"/g,'')+'&quot;,&quot;'+store+'&quot;,this)">'+nm+'<span class="login-store-tag">'+store+'</span></button>';
+      html+='<button class="login-name-btn" onclick="loginPickName(&#39;'+nm+'&#39;,&#39;'+store+'&#39;,this)">'+nm+'<span class="login-store-tag">'+store+'</span></button>';
     });
   });
-  // Head office
-  ['PC HO','Neel (Owner)'].forEach(function(nm){
-    html+='<button class="login-name-btn" onclick="loginPickName(&quot;'+nm+'&quot;,&quot;HO&quot;,this)">'+nm+'<span class="login-store-tag">Head Office</span></button>';
+    // Head office
+  ['Abhishek','PC HO','Neel (Owner)'].forEach(function(nm){
+    html+='<button class="login-name-btn" onclick="loginPickName(&#39;'+nm+'&#39;,&#39;HO&#39;,this)">'+nm+'<span class="login-store-tag">Head Office</span></button>';
   });
   grid.innerHTML=html;
 }
@@ -5618,9 +5820,11 @@ function loginPickName(name, store, btn){
   _loginSelName=name; _loginSelStore=store;
   document.querySelectorAll('.login-name-btn').forEach(function(b){b.classList.remove('sel');});
   btn.classList.add('sel');
-  // Load existing roles for this user if any
+  // Load existing roles for this user (saved > org map default)
   var users=getUsers();
-  _loginSelRoles = (users[name] && users[name].roles) ? users[name].roles.slice() : [];
+  if(users[name] && users[name].roles) _loginSelRoles = users[name].roles.slice();
+  else if(ORG_MAP[name]) _loginSelRoles = ORG_MAP[name].roles.slice();
+  else _loginSelRoles = [];
   // Go to roles step
   setTimeout(function(){
     document.getElementById('login-step-name').style.display='none';
@@ -5632,7 +5836,7 @@ function renderLoginRoles(){
   var list=document.getElementById('login-roles');
   list.innerHTML=ALL_ROLES.map(function(r){
     var sel=_loginSelRoles.indexOf(r.id)>=0?' sel':'';
-    return '<div class="login-role-item'+sel+'" onclick="loginToggleRole(&quot;'+r.id+'&quot;,this)">'
+    return '<div class="login-role-item'+sel+'" onclick="loginToggleRole(&#39;'+r.id+'&#39;,this)">'
       +'<div class="login-role-check">'+(sel?'✓':'')+'</div>'
       +'<div class="login-role-info"><div class="login-role-name">'+r.icon+' '+r.name+'</div><div class="login-role-desc">'+r.desc+'</div></div>'
       +'</div>';
@@ -5691,10 +5895,13 @@ function applyRoleVisibility(){
       if(allowed[t] && !firstVisible) firstVisible=t;
     }
   });
+  // Store scoping
+  try{ applyStoreScoping(); }catch(e){}
   // Add user chip to header
   addUserChip();
   // Switch to first allowed tab
   if(firstVisible) switchTab(firstVisible);
+  try{ if(typeof refreshDashboard==='function') refreshDashboard(); }catch(e){}
 }
 function addUserChip(){
   if(!CURRENT_USER) return;
@@ -5702,13 +5909,14 @@ function addUserChip(){
   var initials=CURRENT_USER.name.charAt(0).toUpperCase();
   var rolesTxt=CURRENT_USER.roles.join(', ');
   // Try to place in topbar
-  var topbar=document.querySelector('.lang-toggle') || document.querySelector('.topbar');
+  var topbar=document.querySelector('.lang-toggle') || document.querySelector('.topbar') || document.querySelector('.topbar-inner') || document.body;
   if(existing){ existing.querySelector('.user-chip-name').textContent=CURRENT_USER.name; return; }
   var chip=document.createElement('div');
   chip.className='user-chip'; chip.id='user-chip';
-  chip.title=rolesTxt;
+  chip.title=(lang==='hi'?'Logout / User बदलें — ':'Logout / Switch user — ')+rolesTxt;
+  chip.style.cursor='pointer';
   chip.onclick=logout;
-  chip.innerHTML='<div class="user-chip-avatar">'+initials+'</div><span class="user-chip-name">'+CURRENT_USER.name+' ▾</span>';
+  chip.innerHTML='<div class="user-chip-avatar">'+initials+'</div><span class="user-chip-name">'+CURRENT_USER.name+'</span><span style="font-size:9px;color:#fff;background:rgba(255,255,255,.25);border-radius:8px;padding:2px 6px;margin-left:2px">🔄 '+(lang==='hi'?'बदलें':'Switch')+'</span>';
   if(topbar && topbar.parentElement) topbar.parentElement.insertBefore(chip, topbar);
 }
 function logout(){
@@ -5726,6 +5934,820 @@ function logout(){
   document.getElementById('login-step-name').style.display='';
   renderLoginNames();
   document.getElementById('login-overlay').classList.remove('hidden');
+}
+// ══════════════════════════════════════════════════════════════
+// INVENTORY MANAGEMENT MODULE
+// ══════════════════════════════════════════════════════════════
+function invLoc(){ return (document.getElementById('inv-loc')&&document.getElementById('inv-loc').value)||'HO Warehouse'; }
+function invDate(){ return (document.getElementById('inv-date')&&document.getElementById('inv-date').value)||todayStr2(); }
+function invKey(){ return 'be_inv_'+invLoc().replace(/ /g,'_')+'_'+invDate(); }
+function invNameKey(){ return 'be_inv_name_'+invDate(); }
+function invLoad(){ try{ return JSON.parse(localStorage.getItem(invKey())||'{}'); }catch(e){ return {}; } }
+function invSaveD(d){ localStorage.setItem(invKey(), JSON.stringify(d)); }
+function saveInvName(){ var n=document.getElementById('inv-name'); if(n) localStorage.setItem(invNameKey(), n.value); }
+function renderInventory(){
+  var dEl=document.getElementById('inv-date'); if(dEl&&!dEl.value) dEl.value=todayStr2();
+  var nEl=document.getElementById('inv-name'); if(nEl) nEl.value=localStorage.getItem(invNameKey())||'';
+  var d=invLoad();
+  var body=document.getElementById('inv-body'); if(!body) return;
+  if(!d.checks) d.checks={}; if(!d.fields) d.fields={}; if(!d.replenish) d.replenish=[];
+  function chk(id,label){ var on=d.checks[id]?' on':''; return '<div class="be-chk" onclick="invChk(&#39;'+id+'&#39;)"><div class="be-chk-box'+on+'"></div><div class="be-chk-lbl">'+label+'</div></div>'; }
+  function fld(id,label,ph,ta){ var v=(d.fields[id]||'').replace(/"/g,'&quot;'); if(ta) return '<div class="be-field"><label>'+label+'</label><textarea onchange="invFld(&quot;'+id+'&quot;,this.value)" placeholder="'+ph+'">'+(d.fields[id]||'')+'</textarea></div>'; return '<div class="be-field"><label>'+label+'</label><input type="text" value="'+v+'" onchange="invFld(&quot;'+id+'&quot;,this.value)" placeholder="'+ph+'"></div>'; }
+  var h='';
+  h+='<div style="background:#f9f8f5;border-radius:8px;padding:9px 11px;font-size:11px;color:var(--mid);margin-bottom:10px">📦 '+(lang==='hi'?'स्थान: ':'Location: ')+'<b>'+invLoc()+'</b> — '+(lang==='hi'?'हर step पूरा होने पर tick करें':'Tick each step done')+'</div>';
+  // Section 1: Fast-moving tracking
+  h+='<div class="be-step open"><div class="be-step-hdr"><div class="be-step-num">1</div><span>'+(lang==='hi'?'🔥 तेज़ बिकने वाला स्टॉक (Fast-moving)':'🔥 Fast-Moving Stock')+'</span></div><div class="be-step-body">';
+  h+=fld('fast_sku',(lang==='hi'?'कौन से SKU/category कल-परसों तेज़ बिके? (5-6 दिन)':'Which SKU/category moved fast? (last 5-6 days)'),'जैसे: Sherwani M-size cream, Kurta L blue...',true);
+  h+=chk('fast_noted',(lang==='hi'?'तेज़ बिकने वाले items नोट किए':'Fast-movers noted'));
+  h+=chk('fast_size_color',(lang==='hi'?'Size/color/category के हिसाब से नोट किया':'Noted by size/color/category'));
+  h+='</div></div>';
+  // Section 2: Slow/dead stock
+  h+='<div class="be-step"><div class="be-step-hdr" onclick="this.parentElement.classList.toggle(&#39;open&#39;)"><div class="be-step-num">2</div><span>'+(lang==='hi'?'🐌 पड़ा हुआ स्टॉक (Slow/Dead)':'🐌 Slow / Dead Stock')+'</span></div><div class="be-step-body">';
+  h+=fld('slow_7',(lang==='hi'?'कौन से SKU 7 दिन से पड़े हैं?':'SKUs lying 7+ days?'),'',true);
+  h+=fld('slow_15',(lang==='hi'?'कौन से SKU 15 दिन से बिल्कुल नहीं हिले?':'SKUs untouched 15+ days?'),'',true);
+  h+=chk('slow_flagged',(lang==='hi'?'Slow stock flag किया':'Slow stock flagged'));
+  h+='</div></div>';
+  // Section 3: Replenishment
+  h+='<div class="be-step"><div class="be-step-hdr" onclick="this.parentElement.classList.toggle(&#39;open&#39;)"><div class="be-step-num">3</div><span>'+(lang==='hi'?'🔄 Replenishment List':'🔄 Replenishment List')+'</span></div><div class="be-step-body">';
+  h+=fld('replenish_list',(lang==='hi'?'कौन से SKU warehouse/purchase से मंगाने हैं?':'Which SKUs to request from warehouse/purchase?'),'SKU list...',true);
+  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0">'
+    +'<button class="be-quick-btn" style="border-color:#1565C0;color:#1565C0" onclick="invSendReplenish(&#39;Warehouse&#39;)">📤 Warehouse</button>'
+    +'<button class="be-quick-btn" style="border-color:#E65100;color:#E65100" onclick="invSendReplenish(&#39;Purchase&#39;)">📤 Purchase</button>'
+    +'<button class="be-quick-btn" style="border-color:#6b21a8;color:#6b21a8" onclick="invSendReplenish(&#39;Owner&#39;)">📤 Owner</button>'
+    +'</div>';
+  h+=chk('replenish_sent',(lang==='hi'?'Replenishment list भेज दी':'Replenishment list sent'));
+  h+='</div></div>';
+  // Section 4: Arrangement
+  h+='<div class="be-step"><div class="be-step-hdr" onclick="this.parentElement.classList.toggle(&#39;open&#39;)"><div class="be-step-num">4</div><span>'+(lang==='hi'?'📐 व्यवस्था (Arrangement)':'📐 Arrangement Check')+'</span></div><div class="be-step-body">';
+  h+=chk('arr_size',(lang==='hi'?'सभी category size-by-size लगी हैं':'All categories arranged size-by-size'));
+  h+=chk('arr_color',(lang==='hi'?'Color-wise व्यवस्थित (जहाँ ज़रूरी)':'Colour-wise arranged (where needed)'));
+  h+=chk('arr_nowh',(lang==='hi'?'Warehouse में कोई stock बेकार नहीं पड़ा':'No stock stuck idle in warehouse'));
+  h+='</div></div>';
+  // Section 5: Barcode compliance
+  h+='<div class="be-step"><div class="be-step-hdr" onclick="this.parentElement.classList.toggle(&#39;open&#39;)"><div class="be-step-num">5</div><span>'+(lang==='hi'?'🏷️ Barcode जाँच':'🏷️ Barcode Compliance')+'</span></div><div class="be-step-body">';
+  h+=chk('bc_all',(lang==='hi'?'सारा stock barcoded है':'All stock is barcoded'));
+  h+=chk('bc_none',(lang==='hi'?'कोई stock बिना barcode नहीं':'No stock without barcode'));
+  h+=chk('bc_stapler',(lang==='hi'?'Stapler help के लिए रखा है':'Stapler kept for help'));
+  h+=fld('bc_pending',(lang==='hi'?'कितने pieces barcode बाकी? (संख्या)':'How many pieces pending barcode? (count)'),'0');
+  h+='</div></div>';
+  // Section 6: Manager alert
+  h+='<div class="be-step"><div class="be-step-hdr" onclick="this.parentElement.classList.toggle(&#39;open&#39;)"><div class="be-step-num">6</div><span>'+(lang==='hi'?'📢 Manager को अपडेट':'📢 Alert Manager')+'</span></div><div class="be-step-body">';
+  h+=fld('mgr_trending',(lang==='hi'?'Trending items जो store में चाहिए':'Trending items store needs'),'',true);
+  h+=fld('mgr_missing',(lang==='hi'?'Missing items जो खत्म हो गए':'Missing/out-of-stock items'),'',true);
+  h+=chk('mgr_updated',(lang==='hi'?'Manager को बता दिया':'Manager updated'));
+  h+='</div></div>';
+  body.innerHTML=h;
+}
+function invChk(id){ var d=invLoad(); if(!d.checks)d.checks={}; d.checks[id]=!d.checks[id]; if(d.checks[id]) d.checks[id+'_ts']=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); invSaveD(d); renderInventory(); }
+function invFld(id,val){ var d=invLoad(); if(!d.fields)d.fields={}; d.fields[id]=val; invSaveD(d); }
+function invSendReplenish(to){
+  var d=invLoad();
+  var list=(d.fields&&d.fields.replenish_list)||'';
+  if(!list.trim()){ toast(lang==='hi'?'पहले SKU list भरें':'Fill SKU list first'); return; }
+  var msg='📦 *Replenishment Request — '+invLoc()+'*\n📅 '+invDate()+'\n\n'+list+'\n\n— '+(localStorage.getItem(invNameKey())||'Inventory')+' (BE App)';
+  window.open('https://wa.me/?text='+encodeURIComponent(msg),'_blank');
+  if(!d.checks)d.checks={}; d.checks['sent_'+to]=true; invSaveD(d);
+  toast('📤 '+to+' — WhatsApp खोला');
+}
+async function submitInventory(){
+  var name=(document.getElementById('inv-name')&&document.getElementById('inv-name').value)||'';
+  if(!name.trim()){ toast(lang==='hi'?'नाम भरें':'Enter name'); return; }
+  await sendToSheets({ type_:'inventory', location:invLoc(), date:invDate(), executive:name, invData:JSON.stringify(invLoad()), submittedAt:new Date().toISOString() });
+  try{ var _n=(document.getElementById('inventory-name')||{}).value||''; if(_n) awardFormPoints(_n,'Inventory',[{reason:'Inventory filled',pts:POINT_RULES.section_fill}]); }catch(e){}
+  toast('✅ '+(lang==='hi'?'Inventory Report जमा हुई':'Inventory submitted'));
+}
+// ══════════════════════════════════════════════════════════════
+// CRM MODULE
+// ══════════════════════════════════════════════════════════════
+function crmStore(){ return (document.getElementById('crm-store')&&document.getElementById('crm-store').value)||'BC'; }
+function crmDate(){ return (document.getElementById('crm-date')&&document.getElementById('crm-date').value)||todayStr2(); }
+function crmKey(){ return 'be_crm_'+crmStore()+'_'+crmDate(); }
+function crmNameKey(){ return 'be_crm_name_'+crmStore()+'_'+crmDate(); }
+function crmLoad(){ try{ return JSON.parse(localStorage.getItem(crmKey())||'{}'); }catch(e){ return {}; } }
+function crmSaveD(d){ localStorage.setItem(crmKey(), JSON.stringify(d)); }
+function saveCRMName(){ var n=document.getElementById('crm-name'); if(n) localStorage.setItem(crmNameKey(), n.value); }
+function renderCRM(){
+  var dEl=document.getElementById('crm-date'); if(dEl&&!dEl.value) dEl.value=todayStr2();
+  var nEl=document.getElementById('crm-name'); if(nEl) nEl.value=localStorage.getItem(crmNameKey())||'';
+  var d=crmLoad(); if(!d.checks)d.checks={}; if(!d.fields)d.fields={};
+  var body=document.getElementById('crm-body'); if(!body) return;
+  function chk(id,label){ var on=d.checks[id]?' on':''; return '<div class="be-chk" onclick="crmChk(&#39;'+id+'&#39;)"><div class="be-chk-box'+on+'"></div><div class="be-chk-lbl">'+label+'</div></div>'; }
+  function fld(id,label,ph){ var v=(d.fields[id]||'').replace(/"/g,'&quot;'); return '<div class="be-field"><label>'+label+'</label><input type="text" value="'+v+'" onchange="crmFld(&quot;'+id+'&quot;,this.value)" placeholder="'+ph+'"></div>'; }
+  var h='<div style="background:#f9f8f5;border-radius:8px;padding:9px 11px;font-size:11px;color:var(--mid);margin-bottom:10px">💬 '+(lang==='hi'?'रोज़ के customers को WA group में add करना':'Add daily customers to WA group')+'</div>';
+  h+='<div class="be-step open"><div class="be-step-hdr"><div class="be-step-num">1</div><span>'+(lang==='hi'?'कल के ग्राहक':'Yesterday Customers')+'</span></div><div class="be-step-body">';
+  h+=fld('count_collected',(lang==='hi'?'कल कितने नंबर मिले?':'Numbers collected yesterday?'),'0');
+  h+=fld('count_added',(lang==='hi'?'कितने WA group में add किए?':'Added to WA group?'),'0');
+  h+=chk('added_group',(lang==='hi'?'सभी नए customers WA group में add किए':'All new customers added to WA group'));
+  h+=chk('welcome_sent',(lang==='hi'?'Welcome message भेजा':'Welcome message sent'));
+  h+=chk('birthday_check',(lang==='hi'?'आज कोई birthday/anniversary? wish किया':'Any birthday/anniversary today? wished'));
+  h+=chk('followup_prev',(lang==='hi'?'पुराने customers को follow-up message':'Follow-up message to old customers'));
+  h+='</div></div>';
+  body.innerHTML=h;
+}
+function crmChk(id){ var d=crmLoad(); if(!d.checks)d.checks={}; d.checks[id]=!d.checks[id]; crmSaveD(d); renderCRM(); }
+function crmFld(id,val){ var d=crmLoad(); if(!d.fields)d.fields={}; d.fields[id]=val; crmSaveD(d); }
+async function submitCRM(){
+  var name=(document.getElementById('crm-name')&&document.getElementById('crm-name').value)||'';
+  if(!name.trim()){ toast(lang==='hi'?'नाम भरें':'Enter name'); return; }
+  await sendToSheets({ type_:'crm', store:crmStore(), date:crmDate(), executive:name, crmData:JSON.stringify(crmLoad()), submittedAt:new Date().toISOString() });
+  try{ var _n=(document.getElementById('crm-name')||{}).value||''; if(_n) awardFormPoints(_n,'CRM',[{reason:'CRM filled',pts:POINT_RULES.section_fill}]); }catch(e){}
+  toast('✅ '+(lang==='hi'?'CRM Report जमा हुई':'CRM submitted'));
+}
+// ══════════════════════════════════════════════════════════════
+// BDA (Business Development) MODULE
+// ══════════════════════════════════════════════════════════════
+function bdaStore(){ return (document.getElementById('bda-store')&&document.getElementById('bda-store').value)||'VKS'; }
+function bdaDate(){ return (document.getElementById('bda-date')&&document.getElementById('bda-date').value)||todayStr2(); }
+function bdaKey(){ return 'be_bda_'+bdaStore()+'_'+bdaDate(); }
+function bdaNameKey(){ return 'be_bda_name_'+bdaStore()+'_'+bdaDate(); }
+function bdaLoad(){ try{ return JSON.parse(localStorage.getItem(bdaKey())||'{}'); }catch(e){ return {}; } }
+function bdaSaveD(d){ localStorage.setItem(bdaKey(), JSON.stringify(d)); }
+function saveBDAName(){ var n=document.getElementById('bda-name'); if(n) localStorage.setItem(bdaNameKey(), n.value); }
+var BDA_PARTNERS=['Wedding Planner','Photographer','Makeup Artist','Banquet/Venue','Caterer','Decorator','Pandit/Priest','Beauty Parlour','Jewellery Shop','Card Printer','DJ/Band','Other'];
+function renderBDA(){
+  var dEl=document.getElementById('bda-date'); if(dEl&&!dEl.value) dEl.value=todayStr2();
+  var nEl=document.getElementById('bda-name'); if(nEl) nEl.value=localStorage.getItem(bdaNameKey())||'';
+  var d=bdaLoad(); if(!d.checks)d.checks={}; if(!d.fields)d.fields={};
+  var body=document.getElementById('bda-body'); if(!body) return;
+  function chk(id,label){ var on=d.checks[id]?' on':''; return '<div class="be-chk" onclick="bdaChk(&#39;'+id+'&#39;)"><div class="be-chk-box'+on+'"></div><div class="be-chk-lbl">'+label+'</div></div>'; }
+  function fld(id,label,ph,ta){ var v=(d.fields[id]||'').replace(/"/g,'&quot;'); if(ta) return '<div class="be-field"><label>'+label+'</label><textarea onchange="bdaFld(&quot;'+id+'&quot;,this.value)" placeholder="'+ph+'">'+(d.fields[id]||'')+'</textarea></div>'; return '<div class="be-field"><label>'+label+'</label><input type="text" value="'+v+'" onchange="bdaFld(&quot;'+id+'&quot;,this.value)" placeholder="'+ph+'"></div>'; }
+  var h='<div style="background:#f9f8f5;border-radius:8px;padding:9px 11px;font-size:11px;color:var(--mid);margin-bottom:10px">🤝 '+(lang==='hi'?'Referral partnership — wedding ecosystem':'Referral partnerships — wedding ecosystem')+'</div>';
+  h+='<div class="be-step open"><div class="be-step-hdr"><div class="be-step-num">1</div><span>'+(lang==='hi'?'आज का काम':'Today Activity')+'</span></div><div class="be-step-body">';
+  h+=fld('partners_met',(lang==='hi'?'आज कौन से partner से मिले/बात हुई?':'Which partners met/contacted today?'),'नाम + type...',true);
+  h+='<div class="be-field"><label>'+(lang==='hi'?'Partner type':'Partner type')+'</label><select onchange="bdaFld(&quot;partner_type&quot;,this.value)"><option value="">--</option>'+BDA_PARTNERS.map(function(p){return '<option'+(d.fields.partner_type===p?' selected':'')+'>'+p+'</option>';}).join('')+'</select></div>';
+  h+=fld('new_tieups',(lang==='hi'?'नए tie-up बने? (संख्या)':'New tie-ups made? (count)'),'0');
+  h+=fld('referrals_recv',(lang==='hi'?'Referrals मिले? (संख्या)':'Referrals received? (count)'),'0');
+  h+=fld('referral_sales',(lang==='hi'?'Referral से sale? (₹)':'Sale from referrals? (₹)'),'0');
+  h+='</div></div>';
+  h+='<div class="be-step"><div class="be-step-hdr" onclick="this.parentElement.classList.toggle(&#39;open&#39;)"><div class="be-step-num">2</div><span>'+(lang==='hi'?'Checklist':'Checklist')+'</span></div><div class="be-step-body">';
+  h+=chk('c_new_partner',(lang==='hi'?'कम-से-कम 1 नए partner से संपर्क':'Contacted at least 1 new partner'));
+  h+=chk('c_followup',(lang==='hi'?'पुराने partners को follow-up':'Followed up existing partners'));
+  h+=chk('c_offer',(lang==='hi'?'Complimentary offer/commission समझाया':'Explained offer/commission'));
+  h+=chk('c_card',(lang==='hi'?'Visiting card/catalogue दिया':'Gave card/catalogue'));
+  h+=chk('c_wa',(lang==='hi'?'WhatsApp पर connect हुए':'Connected on WhatsApp'));
+  h+='</div></div>';
+  body.innerHTML=h;
+}
+function bdaChk(id){ var d=bdaLoad(); if(!d.checks)d.checks={}; d.checks[id]=!d.checks[id]; bdaSaveD(d); renderBDA(); }
+function bdaFld(id,val){ var d=bdaLoad(); if(!d.fields)d.fields={}; d.fields[id]=val; bdaSaveD(d); }
+async function submitBDA(){
+  var name=(document.getElementById('bda-name')&&document.getElementById('bda-name').value)||'';
+  if(!name.trim()){ toast(lang==='hi'?'नाम भरें':'Enter name'); return; }
+  await sendToSheets({ type_:'bda', store:bdaStore(), date:bdaDate(), executive:name, bdaData:JSON.stringify(bdaLoad()), submittedAt:new Date().toISOString() });
+  try{ var _n=(document.getElementById('bda-name')||{}).value||''; if(_n) awardFormPoints(_n,'BDA',[{reason:'BDA filled',pts:POINT_RULES.section_fill}]); }catch(e){}
+  toast('✅ '+(lang==='hi'?'BDA Report जमा हुई':'BDA submitted'));
+}
+// ══════════════════════════════════════════════════════════════
+// PENDING TASKS in CLOSING checklist (Manager=all, others=own)
+// ══════════════════════════════════════════════════════════════
+function buildClosingPendingTasks(){
+  var today=todayStr2();
+  var tasks=loadTasks().filter(function(t){ return t.status==='pending'; });
+  // Role-aware: Manager/PC/Owner see all; others see own
+  var roleAll = CURRENT_USER && CURRENT_USER.roles && (CURRENT_USER.roles.indexOf('Manager')>=0 || CURRENT_USER.roles.indexOf('PC')>=0 || CURRENT_USER.roles.indexOf('Owner')>=0);
+  var myName = CURRENT_USER ? CURRENT_USER.name : '';
+  if(!roleAll && myName){ tasks=tasks.filter(function(t){ return t.assignedTo===myName || t.addedBy===myName; }); }
+  if(tasks.length===0){
+    return '<div class="mgr-be-sync"><div class="mgr-be-hdr" style="background:var(--green)"><span>✅ '+(lang==='hi'?'कोई pending task नहीं':'No pending tasks')+'</span></div></div>';
+  }
+  // Group by person
+  var byPerson={};
+  tasks.forEach(function(t){
+    var p=t.assignedTo||'—';
+    if(!byPerson[p]) byPerson[p]=[];
+    byPerson[p].push(t);
+  });
+  var rows='';
+  Object.keys(byPerson).forEach(function(p){
+    rows+='<tr><td class="pn" colspan="2" style="background:#faf9f7;font-weight:800">👤 '+p+' ('+byPerson[p].length+')</td></tr>';
+    byPerson[p].forEach(function(t){
+      var age = t.carriedFrom ? (' <span style="color:var(--red);font-size:9px">⏳ '+(lang==='hi'?'पुराना':'old')+'</span>') : '';
+      var pri = t.priority==='urgent' ? '🔴 ' : t.priority==='low' ? '🔵 ' : '🟡 ';
+      rows+='<tr><td class="lbl" style="font-size:11px">'+pri+t.desc+age+'</td><td class="val"><button onclick="toggleTaskDone(&#39;'+t.id+'&#39;);buildClChecklist()" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:3px 9px;font-size:10px;cursor:pointer;font-family:inherit">✓ Done</button></td></tr>';
+    });
+  });
+  var totalUrgent=tasks.filter(function(t){return t.priority==='urgent';}).length;
+  return '<div class="mgr-be-sync" style="border-color:var(--orange)">'
+    +'<div class="mgr-be-hdr" style="background:var(--orange)"><span>📋 '+(lang==='hi'?'बाकी काम (Pending Tasks)':'Pending Tasks')+' — '+tasks.length+'</span><span style="font-size:10px">'+(totalUrgent>0?('🔴 '+totalUrgent+' urgent'):'')+'</span></div>'
+    +'<table class="mgr-be-table">'+rows+'</table>'
+    +'<div class="mgr-followup-row" style="font-size:10px;color:var(--light)">'+(roleAll?(lang==='hi'?'सभी staff के pending task':'All staff pending'):(lang==='hi'?'आपके pending task':'Your pending'))+'</div></div>';
+}
+// ── REPORT DATE RANGE ──
+function repQuickRange(range){
+  var from=document.getElementById('rep-date-filter'), to=document.getElementById('rep-date-to');
+  var now=new Date();
+  function fmt(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  if(range==='clear'){ if(from)from.value=''; if(to)to.value=''; }
+  else if(range==='today'){ if(from)from.value=todayStr2(); if(to)to.value=todayStr2(); }
+  else if(range==='week'){ var w=new Date(now); w.setDate(now.getDate()-now.getDay()); if(from)from.value=fmt(w); if(to)to.value=todayStr2(); }
+  else if(range==='month'){ if(from)from.value=fmt(new Date(now.getFullYear(),now.getMonth(),1)); if(to)to.value=todayStr2(); }
+  else if(range==='lastmonth'){ if(from)from.value=fmt(new Date(now.getFullYear(),now.getMonth()-1,1)); if(to)to.value=fmt(new Date(now.getFullYear(),now.getMonth(),0)); }
+  if(typeof filterReports==='function') filterReports();
+}
+// ── STORE SCOPING (VKS sees VKS, BC sees BC, PC/Owner see all) ──
+function userStores(){
+  if(!CURRENT_USER) return ['BC','VKS'];
+  var roles=CURRENT_USER.roles||[];
+  if(roles.indexOf('PC')>=0 || roles.indexOf('Owner')>=0) return ['BC','VKS'];
+  var stores=[];
+  if(CURRENT_USER.store==='HO') stores=['BC','VKS'];      // HO warehouse serves both
+  else if(CURRENT_USER.store==='BC') stores=['BC'];
+  else if(CURRENT_USER.store==='VKS') stores=['VKS'];
+  else stores=['BC','VKS'];
+  // altStores from org map (e.g. Abhishek HO + VKS billing)
+  var om = (typeof ORG_MAP!=='undefined' && ORG_MAP[CURRENT_USER.name]) ? ORG_MAP[CURRENT_USER.name] : null;
+  if(om && om.altStores) om.altStores.forEach(function(s){ if(stores.indexOf(s)<0) stores.push(s); });
+  return stores;
+}
+function canSeeStore(store){ return userStores().indexOf(store)>=0; }
+// Apply store scoping to all store dropdowns + dashboard cards
+function applyStoreScoping(){
+  var stores=userStores();
+  // Filter every store <select>
+  ['prod-store','sme-store','be-store','crm-store','bda-store','rep-store-filter','cl-store','planner-store'].forEach(function(id){
+    var sel=document.getElementById(id); if(!sel) return;
+    for(var i=0;i<sel.options.length;i++){
+      var v=sel.options[i].value;
+      if(v==='BC'||v==='VKS'){ sel.options[i].style.display = stores.indexOf(v)>=0 ? '' : 'none'; sel.options[i].disabled = stores.indexOf(v)<0; }
+    }
+    // If current selection is hidden, switch to first allowed
+    if(sel.value && stores.indexOf(sel.value)<0 && (sel.value==='BC'||sel.value==='VKS')){
+      sel.value=stores[0];
+    }
+  });
+  // Dashboard store cards
+  if(stores.length===1){
+    var hide = stores[0]==='BC' ? 'VKS' : 'BC';
+    ['dash-card-','dashboard-','status-card-'].forEach(function(pfx){
+      var el=document.getElementById(pfx+hide.toLowerCase()); if(el) el.style.display='none';
+    });
+  }
+}
+// ══════════════════════════════════════════════════════════════
+// BATCH A: OLD + CURRENT PENDING TASKS in summary/figures
+// ══════════════════════════════════════════════════════════════
+function collectAllPending(storeFilter){
+  var today=todayStr2();
+  var out=[];
+  // 1. From task system (loadTasks) — carried + current pending
+  try{
+    var tasks=loadTasks().filter(function(t){ return t.status==='pending'; });
+    tasks.forEach(function(t){
+      if(storeFilter && t.store && t.store!==storeFilter) return;
+      out.push({who:t.assignedTo||'—', desc:t.desc, old:!!t.carriedFrom, from:t.carriedFrom||t.date, src:'task'});
+    });
+  }catch(e){}
+  return out;
+}
+function buildPendingSummaryBlock(store){
+  var pend=collectAllPending(store);
+  var oldP=pend.filter(function(p){return p.old;});
+  var curP=pend.filter(function(p){return !p.old;});
+  if(pend.length===0) return '';
+  var oldLbl = (lang==='hi') ? 'पुराने (Old carryover)' : 'Old carryover';
+  var curLbl = (lang==='hi') ? 'आज के' : 'Today';
+  var hdrLbl = (lang==='hi') ? 'बाकी काम' : 'Pending Work';
+  var oldCount = oldP.length>0 ? ('\u23F3 '+oldP.length) : '';
+  var h='<div class="mgr-be-sync" style="border-color:var(--orange)">';
+  h+='<div class="mgr-be-hdr" style="background:var(--orange)"><span>\uD83D\uDCCB '+hdrLbl+'</span><span style="font-size:10px">'+oldCount+'</span></div>';
+  h+='<table class="mgr-be-table">';
+  if(oldP.length){
+    h+='<tr><td class="pn" colspan="2" style="background:#fff3e0;font-weight:800">'+oldLbl+'</td></tr>';
+    oldP.forEach(function(p){ h+='<tr><td class="lbl" style="font-size:11px">'+p.who+': '+p.desc+'</td><td class="val" style="font-size:9px;color:var(--light)">'+(p.from||'')+'</td></tr>'; });
+  }
+  if(curP.length){
+    h+='<tr><td class="pn" colspan="2" style="background:#faf9f7;font-weight:800">'+curLbl+'</td></tr>';
+    curP.forEach(function(p){ h+='<tr><td class="lbl" style="font-size:11px">'+p.who+': '+p.desc+'</td><td class="val"></td></tr>'; });
+  }
+  h+='</table></div>';
+  return h;
+}
+// ══════════════════════════════════════════════════════════════
+// BATCH B: MANAGER STAFF TOGGLE (navigate team members)
+// ══════════════════════════════════════════════════════════════
+var mgrViewStaff = null;
+function buildMgrStaffToggle(store){
+  var roles = CURRENT_USER && CURRENT_USER.roles || [];
+  var isMgr = roles.indexOf('Manager')>=0 || roles.indexOf('PC')>=0 || roles.indexOf('Owner')>=0;
+  if(!isMgr) return '';
+  var staff = getStaffList()[store] || [];
+  if(staff.length===0) return '';
+  var chips = staff.map(function(nm){
+    var on = mgrViewStaff===nm;
+    return '<button onclick="mgrSelectStaff(&#39;'+nm+'&#39;)" style="padding:6px 12px;border-radius:20px;border:1.5px solid '+(on?'#1a1a1a':'#e0ddd8')+';background:'+(on?'#1a1a1a':'#fff')+';color:'+(on?'#fff':'#666')+';font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit">'+nm+'</button>';
+  }).join('');
+  var allChip = '<button onclick="mgrSelectStaff(&#39;&#39;)" style="padding:6px 12px;border-radius:20px;border:1.5px solid '+(!mgrViewStaff?'#1a1a1a':'#e0ddd8')+';background:'+(!mgrViewStaff?'#1a1a1a':'#fff')+';color:'+(!mgrViewStaff?'#fff':'#666')+';font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit">'+(lang==='hi'?'सभी':'All')+'</button>';
+  return '<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px;margin-bottom:10px"><div style="font-size:10px;color:var(--light);font-weight:700;margin-bottom:6px">'+(lang==='hi'?'👥 टीम में देखें/भरें (Manager)':'👥 View/fill for team (Manager)')+'</div><div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px">'+allChip+chips+'</div></div>';
+}
+function mgrSelectStaff(nm){
+  mgrViewStaff = nm || null;
+  if(typeof buildClChecklist==='function') buildClChecklist();
+  toast(nm ? ('👤 '+nm) : (lang==='hi'?'सभी staff':'All staff'));
+}
+// ══════════════════════════════════════════════════════════════
+// BATCH C: INDIVIDUAL + FUNCTION TARGETS (Planner)
+// ══════════════════════════════════════════════════════════════
+var FUNCTION_TARGETS = [
+  {id:'sales_person', icon:'🛍️', label:(lang==='hi'?'Salesperson (हर team member)':'Salesperson (each member)'), fields:[
+    {k:'daily_sales', lbl:(lang==='hi'?'रोज़ बिक्री (₹)':'Daily sales (₹)')},
+    {k:'daily_bills', lbl:(lang==='hi'?'रोज़ बिल':'Daily bills')},
+    {k:'reviews', lbl:(lang==='hi'?'Google reviews/दिन':'Google reviews/day')}
+  ]},
+  {id:'social', icon:'📱', label:'Social Media', fixed:(lang==='hi'?'रोज़: 3 reel — शूट + एडिट + पोस्ट':'Daily: 3 reels — shoot + edit + post'), fields:[
+    {k:'reels', lbl:(lang==='hi'?'Reels/दिन':'Reels/day')}, {k:'photos', lbl:(lang==='hi'?'Photos/दिन':'Photos/day')}
+  ]},
+  {id:'purchase', icon:'📦', label:'Purchase / Barcode', fixed:(lang==='hi'?'Barcoding 24 घंटे में, Stock transfer 24 घंटे में, Stock milan 24 घंटे में':'Barcoding within 24h, stock transfer 24h, stock milan 24h'), fields:[
+    {k:'barcode_hrs', lbl:(lang==='hi'?'Barcode घंटे (24)':'Barcode hrs (24)')}, {k:'milan_hrs', lbl:(lang==='hi'?'Stock milan घंटे (24)':'Stock milan hrs (24)')}
+  ]},
+  {id:'order', icon:'🛒', label:(lang==='hi'?'Order Placement':'Order Placement'), fixed:(lang==='hi'?'Local 2 दिन, बाहर/मंडी 7 दिन (mgr के order से)':'Local 2 days, outstation/mandi 7 days'), fields:[
+    {k:'local_days', lbl:(lang==='hi'?'Local दिन (2)':'Local days (2)')}, {k:'out_days', lbl:(lang==='hi'?'बाहर दिन (7)':'Outstation days (7)')}
+  ]},
+  {id:'billmaker', icon:'💳', label:(lang==='hi'?'Bill Maker / Manager':'Bill Maker / Manager'), fields:[
+    {k:'reviews', lbl:(lang==='hi'?'Google reviews/दिन':'Google reviews/day')}, {k:'coupons', lbl:(lang==='hi'?'Coupons/दिन':'Coupons/day')}
+  ]}
+];
+function funcTargetKey(store, month){ return 'be_functargets_'+store+'_'+month; }
+function loadFuncTargets(store, month){ try{ return JSON.parse(localStorage.getItem(funcTargetKey(store,month))||'{}'); }catch(e){ return {}; } }
+function saveFuncTargetVal(store, month, fnId, k, val){
+  var d=loadFuncTargets(store,month); if(!d[fnId]) d[fnId]={}; d[fnId][k]=val;
+  localStorage.setItem(funcTargetKey(store,month), JSON.stringify(d));
+}
+// Individual salesperson targets (per person)
+function indivTargetKey(store, month){ return 'be_indivtargets_'+store+'_'+month; }
+function loadIndivTargets(store, month){ try{ return JSON.parse(localStorage.getItem(indivTargetKey(store,month))||'{}'); }catch(e){ return {}; } }
+function saveIndivTarget(store, month, person, k, val){
+  var d=loadIndivTargets(store,month); if(!d[person]) d[person]={}; d[person][k]=val;
+  localStorage.setItem(indivTargetKey(store,month), JSON.stringify(d));
+}
+function buildTargetsPanel(store, month){
+  var indiv=loadIndivTargets(store,month);
+  var func=loadFuncTargets(store,month);
+  var staff=getStaffList()[store]||[];
+  var h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:12px">';
+  h+='<div style="font-size:14px;font-weight:800;margin-bottom:4px">🎯 '+(lang==='hi'?'Individual & Function Targets':'Individual & Function Targets')+'</div>';
+  h+='<div style="font-size:11px;color:var(--light);margin-bottom:12px">'+(lang==='hi'?'हर team member salesman की तरह भी काम करता है':'Every member also acts as salesman when needed')+'</div>';
+  // Individual salesperson targets
+  h+='<div style="font-size:12px;font-weight:700;color:var(--gold);margin:10px 0 6px">🛍️ '+(lang==='hi'?'हर Salesperson के target':'Per-Salesperson Targets')+'</div>';
+  h+='<table class="mgr-be-table"><thead><tr><th style="text-align:left;font-size:9px">Person</th><th style="font-size:9px">'+(lang==='hi'?'बिक्री/दिन':'Sales/day')+'</th><th style="font-size:9px">'+(lang==='hi'?'बिल':'Bills')+'</th><th style="font-size:9px">Reviews</th></tr></thead><tbody>';
+  staff.forEach(function(nm){
+    var p=indiv[nm]||{};
+    h+='<tr><td class="pn" style="font-size:11px">'+nm+'</td>';
+    ['daily_sales','daily_bills','reviews'].forEach(function(k){
+      h+='<td><input type="number" value="'+(p[k]||'')+'" onchange="saveIndivTarget(&#39;'+store+'&#39;,&#39;'+month+'&#39;,&#39;'+nm+'&#39;,&#39;'+k+'&#39;,this.value)" style="width:52px;padding:4px;border:1px solid #ddd;border-radius:5px;font-size:11px;text-align:center;font-family:inherit"></td>';
+    });
+    h+='</tr>';
+  });
+  h+='</tbody></table>';
+  // Function targets
+  h+='<div style="font-size:12px;font-weight:700;color:var(--gold);margin:14px 0 6px">⚙️ '+(lang==='hi'?'Function-wise Targets':'Function-wise Targets')+'</div>';
+  FUNCTION_TARGETS.forEach(function(ft){
+    if(ft.id==='sales_person') return; // already shown above
+    var fv=func[ft.id]||{};
+    h+='<div style="border:1px solid #eee;border-radius:8px;padding:10px;margin-bottom:8px">';
+    h+='<div style="font-size:12px;font-weight:700">'+ft.icon+' '+ft.label+'</div>';
+    if(ft.fixed) h+='<div style="font-size:10px;color:var(--light);margin:3px 0 8px">📋 '+ft.fixed+'</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    ft.fields.forEach(function(f){
+      h+='<div style="flex:1;min-width:120px"><label style="font-size:9px;color:var(--light);display:block;margin-bottom:2px">'+f.lbl+'</label><input type="number" value="'+(fv[f.k]||'')+'" onchange="saveFuncTargetVal(&#39;'+store+'&#39;,&#39;'+month+'&#39;,&#39;'+ft.id+'&#39;,&#39;'+f.k+'&#39;,this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px;font-family:inherit"></div>';
+    });
+    h+='</div></div>';
+  });
+  h+='</div>';
+  return h;
+}
+// ══════════════════════════════════════════════════════════════
+// BATCH D: 10-MIN TRAINING (all executives mark daily)
+// ══════════════════════════════════════════════════════════════
+function trainDate(){ return (document.getElementById('train-date')&&document.getElementById('train-date').value)||todayStr2(); }
+function trainNameKey(){ return 'be_train_name'; }
+function trainKey(){ var nm=(document.getElementById('train-name')&&document.getElementById('train-name').value)||'x'; return 'be_train_'+nm+'_'+trainDate(); }
+function saveTrainName(){ var n=document.getElementById('train-name'); if(n) localStorage.setItem(trainNameKey(), n.value); renderTraining(); }
+function trainLoad(){ try{ return JSON.parse(localStorage.getItem(trainKey())||'{}'); }catch(e){ return {}; } }
+function trainSaveD(d){ localStorage.setItem(trainKey(), JSON.stringify(d)); }
+var TRAIN_TOPICS=[
+  {id:'greeting', t:(lang==='hi'?'Greeting — smile, welcome, eye contact':'Greeting — smile, welcome, eye contact')},
+  {id:'need', t:(lang==='hi'?'5 need-analysis questions पूछे':'5 need-analysis questions')},
+  {id:'stages', t:(lang==='hi'?'7 sales stages याद किए':'7 sales stages revised')},
+  {id:'objection', t:(lang==='hi'?'Objection handling — first No पर नहीं रुकना':'Objection handling — never stop at first No')},
+  {id:'crosssell', t:(lang==='hi'?'Cross-sell / upsell practice':'Cross-sell / upsell practice')},
+  {id:'review', t:(lang==='hi'?'Google review माँगना सीखा':'Asking for Google review')},
+  {id:'today_focus', t:(lang==='hi'?'आज का focus area समझा':'Today focus area understood')}
+];
+function renderTraining(){
+  var dEl=document.getElementById('train-date'); if(dEl&&!dEl.value) dEl.value=todayStr2();
+  var nEl=document.getElementById('train-name'); if(nEl && !nEl.value) nEl.value=localStorage.getItem(trainNameKey())||'';
+  var d=trainLoad(); if(!d.checks)d.checks={};
+  var body=document.getElementById('train-body'); if(!body) return;
+  var done=TRAIN_TOPICS.filter(function(t){return d.checks[t.id];}).length;
+  var pct=Math.round(done/TRAIN_TOPICS.length*100);
+  var h='<div style="background:linear-gradient(135deg,#6b21a8,#9333ea);color:#fff;border-radius:12px;padding:14px;margin-bottom:12px;text-align:center">'
+    +'<div style="font-size:15px;font-weight:800">🎓 '+(lang==='hi'?'रोज़ 10-मिनट Training':'Daily 10-Min Training')+'</div>'
+    +'<div style="font-size:11px;opacity:.9;margin-top:2px">'+(lang==='hi'?'हर executive को रोज़ मार्क करना है':'Every executive marks daily')+'</div>'
+    +'<div style="font-size:24px;font-weight:800;margin-top:8px">'+pct+'%</div></div>';
+  TRAIN_TOPICS.forEach(function(t){
+    var on=d.checks[t.id]?' on':'';
+    h+='<div class="be-chk" style="padding:10px;border:1px solid #eee;border-radius:8px;margin-bottom:6px" onclick="trainChk(&#39;'+t.id+'&#39;)"><div class="be-chk-box'+on+'"></div><div class="be-chk-lbl">'+t.t+'</div></div>';
+  });
+  body.innerHTML=h;
+}
+function trainChk(id){ var d=trainLoad(); if(!d.checks)d.checks={}; d.checks[id]=!d.checks[id]; trainSaveD(d); renderTraining(); }
+async function submitTraining(){
+  var name=(document.getElementById('train-name')&&document.getElementById('train-name').value)||'';
+  if(!name.trim()){ toast(lang==='hi'?'नाम भरें':'Enter name'); return; }
+  var d=trainLoad();
+  var done=TRAIN_TOPICS.filter(function(t){return (d.checks||{})[t.id];}).length;
+  await sendToSheets({ type_:'training_daily', executive:name, date:trainDate(), done:done, total:TRAIN_TOPICS.length, trainData:JSON.stringify(d), submittedAt:new Date().toISOString() });
+  try{ var _n=(document.getElementById('training-name')||{}).value||''; if(_n) awardFormPoints(_n,'Training',[{reason:'Training filled',pts:POINT_RULES.section_fill}]); }catch(e){}
+  toast('✅ '+(lang==='hi'?'Training जमा हुई':'Training submitted')+' ('+done+'/'+TRAIN_TOPICS.length+')');
+}
+// ── PRODUCTIVITY SUB-TAB ROLE FILTERING ──
+function applyProdSubTabScope(){
+  if(!CURRENT_USER){ return; }
+  var roles=CURRENT_USER.roles||[];
+  // Map roles → which sub-tabs they can see
+  var roleSubTabs={
+    'Manager':['timesheet','sme','billing','inventory','crm','bda','training'],
+    'PC':['timesheet','sme','billing','inventory','crm','bda','training'],
+    'Owner':['timesheet','sme','billing','inventory','crm','bda','training'],
+    'Social Media Exec':['sme','training'],
+    'Billing Exec':['billing','training'],
+    'Inventory':['inventory','training'],
+    'CRM':['crm','training'],
+    'BDA':['bda','training'],
+    'Telecaller':['timesheet','training'],
+    'Accountant':['timesheet','training'],
+    'Sales':['training']
+  };
+  var allowed={};
+  roles.forEach(function(r){ (roleSubTabs[r]||[]).forEach(function(s){ allowed[s]=true; }); });
+  var btnMap={timesheet:'prod-sub-ts', sme:'prod-sub-sme', billing:'prod-sub-be', inventory:'prod-sub-inv', crm:'prod-sub-crm', bda:'prod-sub-bda', training:'prod-sub-train'};
+  var firstAllowed=null;
+  Object.keys(btnMap).forEach(function(k){
+    var b=document.getElementById(btnMap[k]);
+    if(b){ b.style.display = allowed[k] ? '' : 'none'; if(allowed[k] && !firstAllowed) firstAllowed=k; }
+  });
+  // Default to the user's first allowed sub-tab (not always timesheet)
+  if(firstAllowed) setProdSub(firstAllowed);
+}
+// ══════════════════════════════════════════════════════════════
+// POINTS SYSTEM v2 — config, redemption, leaderboard
+// ══════════════════════════════════════════════════════════════
+// Adjustable point values (edit here anytime)
+var POINT_RULES = {
+  section_fill:     1,    // ★ each section/KRA filled = 1 point (attendance, camera, grooming, digital, training, WA adds, leave app, etc.)
+  // Behavioral (default values, adjustable):
+  punctual:         5,    // arrived before 10:00 AM
+  early_bird:       3,    // extra for coming well before 10
+  lunch_ontime:     3,    // lunch out+in within 1 hour
+  target_one:       10,   // hit units OR amount target
+  target_both:      20,   // hit both units + amount
+  absent_noapp:    -15,   // absent without leave application
+  late_coming:     -5     // late arrival
+};
+var PTS_REDEEM_KEY='be_points_redeem_v1';
+function loadRedemptions(){ try{ return JSON.parse(localStorage.getItem(PTS_REDEEM_KEY)||'{}'); }catch(e){ return {}; } }
+function saveRedemptions(d){ localStorage.setItem(PTS_REDEEM_KEY, JSON.stringify(d)); }
+// Net points = earned total − redeemed
+function netPoints(name){
+  var data=loadPoints();
+  var earned=(data[name]&&data[name].total)||0;
+  var redeemed=(loadRedemptions()[name])||0;
+  return {earned:earned, redeemed:redeemed, net:earned-redeemed};
+}
+// Award + show a small popup with points earned for THIS form
+function awardFormPoints(name, formLabel, breakdown){
+  if(!name) return;
+  var total=0, lines=[];
+  breakdown.forEach(function(b){
+    if(b.pts!==0){ awardPoints(name, b.reason, b.pts); total+=b.pts; lines.push(b); }
+  });
+  // Sync to sheets
+  try{
+    sendToSheets({ type_:'points', staff:name, form:formLabel, points:total, breakdown:JSON.stringify(lines), date:todayStr2(), submittedAt:new Date().toISOString() });
+  }catch(e){}
+  showPointsPopup(name, formLabel, lines, total);
+  return total;
+}
+function showPointsPopup(name, formLabel, lines, total){
+  var np=netPoints(name);
+  var existing=document.getElementById('points-popup'); if(existing) existing.remove();
+  var pop=document.createElement('div');
+  pop.id='points-popup';
+  pop.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:950;display:flex;align-items:center;justify-content:center;padding:20px';
+  var rows=lines.map(function(l){
+    var col=l.pts>0?'#2e7d32':'#c62828';
+    return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px"><span>'+l.reason+'</span><span style="font-weight:800;color:'+col+'">'+(l.pts>0?'+':'')+l.pts+'</span></div>';
+  }).join('');
+  var totCol=total>=0?'#2e7d32':'#c62828';
+  pop.innerHTML='<div style="background:#fff;border-radius:18px;padding:24px;max-width:340px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)">'
+    +'<div style="font-size:42px">'+(total>=0?'🎉':'⚠️')+'</div>'
+    +'<div style="font-size:16px;font-weight:800;margin-top:4px">'+name+'</div>'
+    +'<div style="font-size:11px;color:#888;margin-bottom:12px">'+formLabel+'</div>'
+    +'<div style="background:#f9f8f5;border-radius:10px;padding:12px;text-align:left">'+rows+'<div style="border-top:2px solid #eee;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-size:14px;font-weight:800"><span>'+(lang==="hi"?"इस form से":"This form")+'</span><span style="color:'+totCol+'">'+(total>=0?"+":"")+total+'</span></div></div>'
+    +'<div style="display:flex;gap:8px;margin-top:12px">'
+    +'<div style="flex:1;background:#FFF8E1;border-radius:10px;padding:10px"><div style="font-size:9px;color:#8a6d0a">'+(lang==="hi"?"कुल कमाए":"Earned")+'</div><div style="font-size:18px;font-weight:800;color:#8a6d0a">'+np.earned+'</div></div>'
+    +'<div style="flex:1;background:#E8F5E9;border-radius:10px;padding:10px"><div style="font-size:9px;color:#2e7d32">'+(lang==="hi"?"बाकी (net)":"Net left")+'</div><div style="font-size:18px;font-weight:800;color:#2e7d32">'+np.net+'</div></div>'
+    +'</div>'
+    +'<button onclick="document.getElementById(\'points-popup\').remove()" style="margin-top:14px;width:100%;padding:11px;border:none;border-radius:10px;background:#1a1a1a;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+(lang==="hi"?"ठीक है":"OK")+'</button>'
+    +'</div>';
+  document.body.appendChild(pop);
+  setTimeout(function(){ var p=document.getElementById('points-popup'); if(p) p.remove(); }, 6000);
+}
+// ── LEADERBOARD ──
+function buildLeaderboard(){
+  var data=loadPoints();
+  var redeem=loadRedemptions();
+  var mgrNames=[]; 
+  // Managers first
+  Object.keys(ORG_MAP||{}).forEach(function(n){ if(ORG_MAP[n].roles.indexOf('Manager')>=0) mgrNames.push(n); });
+  var all=Object.keys(data).map(function(n){
+    return {name:n, earned:data[n].total||0, net:(data[n].total||0)-((redeem[n])||0), isMgr:mgrNames.indexOf(n)>=0};
+  });
+  // Sort: managers first group, then by net desc
+  all.sort(function(a,b){ return b.net-a.net; });
+  var mgrs=all.filter(function(x){return x.isMgr;});
+  var others=all.filter(function(x){return !x.isMgr;});
+  var ordered=mgrs.concat(others);
+  if(ordered.length===0) return '<div style="text-align:center;padding:20px;color:#999;font-size:12px">'+(lang==='hi'?'अभी कोई points नहीं':'No points yet')+'</div>';
+  // Top 3 podium with photo placeholders
+  var top3=all.slice(0,3);
+  var medals=['🥇','🥈','🥉'];
+  var podium='<div style="display:flex;justify-content:center;gap:10px;margin-bottom:16px;align-items:flex-end">';
+  top3.forEach(function(p,i){
+    var h=[80,64,56][i];
+    podium+='<div style="text-align:center"><div style="width:'+([64,52,52][i])+'px;height:'+([64,52,52][i])+'px;border-radius:50%;background:linear-gradient(135deg,#FFD700,#FFA000);display:flex;align-items:center;justify-content:center;font-size:24px;margin:0 auto;border:3px solid #fff;box-shadow:0 4px 12px rgba(0,0,0,.2)">'+p.name.charAt(0)+'</div>'
+      +'<div style="font-size:20px;margin-top:2px">'+medals[i]+'</div>'
+      +'<div style="font-size:11px;font-weight:700">'+p.name+'</div>'
+      +'<div style="font-size:13px;font-weight:800;color:#FFA000">'+p.net+'</div></div>';
+  });
+  podium+='</div>';
+  var rows=ordered.map(function(p,i){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #f5f4f0;'+(p.isMgr?'background:#faf9ff':'')+'">'
+      +'<div style="width:22px;font-weight:800;color:#888;font-size:12px">'+(i+1)+'</div>'
+      +'<div style="width:32px;height:32px;border-radius:50%;background:#1a1a1a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800">'+p.name.charAt(0)+'</div>'
+      +'<div style="flex:1"><div style="font-size:13px;font-weight:700">'+p.name+(p.isMgr?' <span style="font-size:8px;background:var(--purple);color:#fff;padding:1px 5px;border-radius:8px">MGR</span>':'')+'</div><div style="font-size:9px;color:#999">'+(lang==='hi'?'कमाए':'earned')+' '+p.earned+'</div></div>'
+      +'<div style="font-size:16px;font-weight:800;color:#2e7d32">'+p.net+'</div>'
+      +'</div>';
+  }).join('');
+  return '<div style="background:linear-gradient(135deg,#1a1a1a,#333);color:#fff;border-radius:14px 14px 0 0;padding:16px;text-align:center"><div style="font-size:16px;font-weight:800">🏆 '+(lang==='hi'?'Points Leaderboard':'Points Leaderboard')+'</div><div style="font-size:10px;opacity:.8">'+(lang==='hi'?'स्वस्थ competition — top performers':'Healthy competition')+'</div></div>'
+    +'<div style="background:#fff;padding:16px 12px 4px">'+podium+'</div>'
+    +'<div style="background:#fff;border-radius:0 0 14px 14px;overflow:hidden">'+rows+'</div>';
+}
+// ══════════════════════════════════════════════════════════════
+// BEHAVIORAL POINTS (punctuality, lunch, absence) from attendance
+// ══════════════════════════════════════════════════════════════
+function awardAttendanceBehaviorPoints(){
+  var today=todayStr2();
+  var store=(document.getElementById('att-store')&&document.getElementById('att-store').value)||'BC';
+  var team=(TEAMS[store]||[]);
+  team.forEach(function(name){
+    var key='att_'+name;
+    var s=attState[key]; if(!s) return;
+    // Prevent double-award same day
+    var awardKey='be_behavior_'+name+'_'+today;
+    if(localStorage.getItem(awardKey)) return;
+    var bd=[];
+    // Absence without application
+    if(s.status==='absent'){
+      var hasLeave=false;
+      try{ var leaves=JSON.parse(localStorage.getItem('be_leaves_'+today)||'[]'); hasLeave=leaves.some(function(l){return l.name===name;}); }catch(e){}
+      if(!hasLeave) bd.push({reason:(lang==='hi'?'बिना application गैरहाजिर':'Absent no application'),pts:POINT_RULES.absent_noapp});
+    } else if(s.status==='present' && s.timeIn){
+      // Punctuality: before 10:00 = punctual; before 9:45 = early bird bonus
+      var parts=s.timeIn.split(':');
+      if(parts.length>=2){
+        var mins=parseInt(parts[0])*60+parseInt(parts[1]);
+        if(mins <= 600){ bd.push({reason:(lang==='hi'?'समय पर (10 बजे से पहले)':'Punctual (before 10)'),pts:POINT_RULES.punctual}); }
+        else { bd.push({reason:(lang==='hi'?'देर से आना':'Late coming'),pts:POINT_RULES.late_coming}); }
+        if(mins <= 585){ bd.push({reason:(lang==='hi'?'जल्दी आना (bonus)':'Early bird bonus'),pts:POINT_RULES.early_bird}); }
+      }
+      // Lunch discipline: out+in within 60 min
+      if(s.lunchOut && s.lunchIn){
+        var lo=s.lunchOut.split(':'), li=s.lunchIn.split(':');
+        if(lo.length>=2 && li.length>=2){
+          var diff=(parseInt(li[0])*60+parseInt(li[1]))-(parseInt(lo[0])*60+parseInt(lo[1]));
+          if(diff>0 && diff<=60){ bd.push({reason:(lang==='hi'?'Lunch समय पर (≤1 घंटा)':'Lunch on-time (≤1hr)'),pts:POINT_RULES.lunch_ontime}); }
+        }
+      }
+    }
+    if(bd.length){
+      bd.forEach(function(b){ awardPoints(name,b.reason,b.pts); });
+      localStorage.setItem(awardKey,'1');
+    }
+  });
+}
+// ══════════════════════════════════════════════════════════════
+// MONTHLY COMPLIANCE ONE-PAGER (flags unfilled forms = missed points)
+// ══════════════════════════════════════════════════════════════
+function buildComplianceOnePager(store, fromDate, toDate){
+  // Expected daily sections
+  var EXPECTED=['opening','attendance','camera','closing'];
+  var expLabels={opening:'Opening',attendance:'Attendance',camera:'Camera/Grooming',closing:'Closing'};
+  // Count filled from allReports
+  var from=fromDate||todayStr2(), to=toDate||todayStr2();
+  var recs=allReports.filter(function(r){
+    if(store && r.store!==store) return false;
+    if(r.date < from || r.date > to) return false;
+    return true;
+  });
+  // Build date list
+  function dateRange(a,b){ var out=[],d=new Date(a),e=new Date(b); while(d<=e){ out.push(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); } return out; }
+  var days=dateRange(from,to);
+  var missing=[];
+  days.forEach(function(day){
+    EXPECTED.forEach(function(type){
+      var filled=recs.some(function(r){return r.date===day&&(r.sheetType===type||r.type_===type);});
+      if(!filled) missing.push({day:day, type:expLabels[type]});
+    });
+  });
+  var totalExpected=days.length*EXPECTED.length;
+  var filledCount=totalExpected-missing.length;
+  var pct=totalExpected>0?Math.round(filledCount/totalExpected*100):0;
+  var h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:12px">';
+  h+='<div style="font-size:15px;font-weight:800;margin-bottom:2px">📋 '+(lang==='hi'?'Compliance रिपोर्ट':'Compliance Report')+' — '+(store||'All')+'</div>';
+  h+='<div style="font-size:11px;color:var(--light);margin-bottom:12px">'+from+' → '+to+'</div>';
+  h+='<div style="display:flex;gap:10px;margin-bottom:12px">';
+  h+='<div style="flex:1;background:#E8F5E9;border-radius:10px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:800;color:#2e7d32">'+pct+'%</div><div style="font-size:9px;color:#2e7d32">'+(lang==='hi'?'भरा गया':'Filled')+'</div></div>';
+  h+='<div style="flex:1;background:#FFEBEE;border-radius:10px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:800;color:#c62828">'+missing.length+'</div><div style="font-size:9px;color:#c62828">'+(lang==='hi'?'छूटे (missed points)':'Missed (points lost)')+'</div></div>';
+  h+='</div>';
+  if(missing.length===0){
+    h+='<div style="text-align:center;padding:14px;color:#2e7d32;font-size:13px;font-weight:700">✅ '+(lang==='hi'?'सब कुछ भरा गया — कोई point नहीं छूटा!':'All filled — no points missed!')+'</div>';
+  } else {
+    h+='<div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">⚠️ '+(lang==='hi'?'ये नहीं भरे गए (हर एक = 1 point का नुकसान):':'Not filled (each = 1 point lost):')+'</div>';
+    h+='<div style="max-height:220px;overflow-y:auto">';
+    // Group by day
+    var byDay={}; missing.forEach(function(m){ if(!byDay[m.day])byDay[m.day]=[]; byDay[m.day].push(m.type); });
+    Object.keys(byDay).sort().reverse().forEach(function(day){
+      h+='<div style="padding:6px 0;border-bottom:1px solid #f5f4f0;font-size:11px"><b>'+day+'</b>: <span style="color:var(--red)">'+byDay[day].join(', ')+'</span></div>';
+    });
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
+}
+// ── MY POINTS card (personal) + redemption ──
+function buildMyPointsCard(){
+  if(!CURRENT_USER) return '';
+  var np=netPoints(CURRENT_USER.name);
+  var data=loadPoints();
+  var hist=(data[CURRENT_USER.name]&&data[CURRENT_USER.name].history)||[];
+  var recent=hist.slice(-5).reverse();
+  var histHtml=recent.map(function(h){
+    var col=h.pts>0?'#2e7d32':'#c62828';
+    return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0"><span style="color:#666">'+h.reason+'</span><span style="font-weight:700;color:'+col+'">'+(h.pts>0?'+':'')+h.pts+'</span></div>';
+  }).join('') || '<div style="font-size:11px;color:#999;text-align:center;padding:8px">'+(lang==='hi'?'अभी कोई points नहीं':'No points yet')+'</div>';
+  return '<div style="background:linear-gradient(135deg,#6b21a8,#9333ea);color:#fff;border-radius:14px;padding:16px;margin:12px auto 0;max-width:700px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:14px;font-weight:800">⭐ '+(lang==='hi'?'मेरे Points':'My Points')+' — '+CURRENT_USER.name+'</div></div>'
+    +'<div style="display:flex;gap:8px;margin-top:12px">'
+    +'<div style="flex:1;background:rgba(255,255,255,.15);border-radius:10px;padding:10px;text-align:center"><div style="font-size:22px;font-weight:800">'+np.earned+'</div><div style="font-size:9px;opacity:.85">'+(lang==='hi'?'कुल कमाए':'Earned')+'</div></div>'
+    +'<div style="flex:1;background:rgba(255,255,255,.15);border-radius:10px;padding:10px;text-align:center"><div style="font-size:22px;font-weight:800">'+np.redeemed+'</div><div style="font-size:9px;opacity:.85">'+(lang==='hi'?'Redeem किए':'Redeemed')+'</div></div>'
+    +'<div style="flex:1;background:#fff;color:#6b21a8;border-radius:10px;padding:10px;text-align:center"><div style="font-size:22px;font-weight:800">'+np.net+'</div><div style="font-size:9px">'+(lang==='hi'?'बाकी (net)':'Net left')+'</div></div>'
+    +'</div>'
+    +'<div style="background:rgba(255,255,255,.1);border-radius:10px;padding:10px;margin-top:10px"><div style="font-size:10px;opacity:.85;margin-bottom:4px">'+(lang==='hi'?'हाल के points:':'Recent:')+'</div>'+histHtml+'</div>'
+    +'</div>';
+}
+// ── Auto-fill checklist identity from login (avoid double entry) ──
+function prefillChecklistFromLogin(){
+  if(!CURRENT_USER) return;
+  var mgrSel=document.getElementById('cl-manager');
+  if(mgrSel){
+    for(var i=0;i<mgrSel.options.length;i++){ if(mgrSel.options[i].value===CURRENT_USER.name){ mgrSel.selectedIndex=i; break; } }
+  }
+  var roleSel=document.getElementById('cl-role');
+  if(roleSel && CURRENT_USER.roles && CURRENT_USER.roles[0]){
+    for(var j=0;j<roleSel.options.length;j++){ if(roleSel.options[j].value===CURRENT_USER.roles[0]){ roleSel.selectedIndex=j; break; } }
+  }
+  // Hide the identity fields since already chosen at login — show a compact chip instead
+  var roleField = roleSel ? roleSel.closest('.field') : null;
+  var nameField = mgrSel ? mgrSel.closest('.field') : null;
+  if(roleField) roleField.style.display='none';
+  if(nameField){
+    // Replace with a read-only display
+    nameField.innerHTML='<label class="hi" style="font-size:10px">भरने वाला / Filled by</label><div style="padding:8px 10px;background:#f9f8f5;border-radius:8px;font-size:13px;font-weight:700">👤 '+CURRENT_USER.name+' <span style="font-size:9px;color:#888">('+(CURRENT_USER.roles||[]).join(', ')+')</span></div>';
+    // keep the hidden select for value — re-add it
+    var hidden=document.createElement('select'); hidden.id='cl-manager'; hidden.style.display='none';
+    var opt=document.createElement('option'); opt.value=CURRENT_USER.name; opt.selected=true; hidden.appendChild(opt);
+    nameField.appendChild(hidden);
+  }
+}
+// ══════════════════════════════════════════════════════════════
+// SALESMAN DAILY CLOSING CHECKLIST (KRA-based, simple Yes/No + numbers)
+// Shown to Sales role; managers see full checklist
+// ══════════════════════════════════════════════════════════════
+var RAINBOW_CATEGORIES=['Sherwani','Indo Western','Blazer','Coat Suit','Jodhpuri','Kurta Pajama','Koti/Bandi','Shirt','Jeans/Trouser','Ladies Wear','Kids Wear','Accessories'];
+function isSalesOnly(){
+  if(!CURRENT_USER) return false;
+  var roles=CURRENT_USER.roles||[];
+  var mgr = roles.indexOf('Manager')>=0 || roles.indexOf('PC')>=0 || roles.indexOf('Owner')>=0;
+  return !mgr && roles.indexOf('Sales')>=0;
+}
+function salesKey(){ return 'be_salesman_'+(CURRENT_USER?CURRENT_USER.name:'x')+'_'+todayStr2(); }
+function salesLoad(){ try{ return JSON.parse(localStorage.getItem(salesKey())||'{}'); }catch(e){ return {}; } }
+function salesSaveD(d){ localStorage.setItem(salesKey(), JSON.stringify(d)); }
+function buildSalesmanChecklist(){
+  var d=salesLoad(); if(!d.checks)d.checks={}; if(!d.nums)d.nums={}; if(!d.rainbow)d.rainbow={}; if(!d.text)d.text={};
+  function chk(id,label){ var on=d.checks[id]?' on':''; return '<div class="be-chk" onclick="salesChk(&#39;'+id+'&#39;)"><div class="be-chk-box'+on+'"></div><div class="be-chk-lbl">'+label+'</div></div>'; }
+  function num(id,label){ return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0"><span style="font-size:12px;color:var(--dark)">'+label+'</span><input type="number" value="'+(d.nums[id]||'')+'" onchange="salesNum(&#39;'+id+'&#39;,this.value)" style="width:70px;padding:6px;border:1.5px solid #ddd;border-radius:6px;font-size:13px;text-align:center;font-family:inherit"></div>'; }
+  function txt(id,label){ return '<div class="be-field"><label>'+label+'</label><input type="text" value="'+((d.text[id]||'').replace(/"/g,"&quot;"))+'" onchange="salesTxt(&#39;'+id+'&#39;,this.value)"></div>'; }
+  function sec(icon,title,inner){ return '<div class="be-step open" style="margin-bottom:10px"><div class="be-step-hdr" style="background:#faf9f7"><span>'+icon+' '+title+'</span></div><div class="be-step-body">'+inner+'</div></div>'; }
+  var h='<div style="background:linear-gradient(135deg,#1B5E20,#43a047);color:#fff;border-radius:12px;padding:14px;margin-bottom:12px;text-align:center"><div style="font-size:15px;font-weight:800">🛍️ '+(lang==="hi"?"Salesman दैनिक Closing Checklist":"Salesman Daily Closing")+'</div><div style="font-size:11px;opacity:.9">'+(CURRENT_USER?CURRENT_USER.name:"")+' • '+(lang==="hi"?"सिर्फ 2-3 मिनट":"Just 2-3 min")+'</div></div>';
+  // 1. Sales & Customer
+  h+=sec("🎯","1. "+(lang==="hi"?"बिक्री और ग्राहक":"Sales & Customer"),
+    chk("s1_attend",lang==="hi"?"हर ग्राहक को attend किया":"Attended every customer")
+    +chk("s1_ask",lang==="hi"?"product दिखाने से पहले need पूछी":"Asked requirement first")
+    +chk("s1_close",lang==="hi"?"हर sale close करने की कोशिश की":"Attempted to close every sale")
+    +'<div style="border-top:1px solid #eee;margin-top:8px;padding-top:6px">'
+    +num("s1_customers",lang==="hi"?"Customers attended":"Customers attended")
+    +num("s1_bills",lang==="hi"?"Bills बने":"Bills generated")
+    +num("s1_nopurchase",lang==="hi"?"नहीं खरीदा":"Did not purchase")
+    +'</div>');
+  // 2. Cross-sell
+  h+=sec("💰","2. "+(lang==="hi"?"Cross-sell / Upsell":"Cross-selling & Upselling"),
+    chk("s2_addl",lang==="hi"?"हर bill के साथ 1 extra product suggest किया":"Suggested 1 additional product")
+    +chk("s2_match",lang==="hi"?"matching accessories suggest किए":"Suggested matching accessories")
+    +'<div style="border-top:1px solid #eee;margin-top:8px;padding-top:6px">'
+    +num("s2_crosssold",lang==="hi"?"Cross-sold customers":"Cross-sold customers")
+    +num("s2_accessories",lang==="hi"?"Accessories बेचे":"Accessories sold")
+    +'</div>');
+  // 3. Data collection
+  h+=sec("📱","3. "+(lang==="hi"?"Customer Data":"Customer Data Collection"),
+    num("s3_names",lang==="hi"?"Names collected":"Names collected")
+    +num("s3_mobiles",lang==="hi"?"Mobile numbers":"Mobile numbers")
+    +num("s3_dates",lang==="hi"?"Wedding/Event dates":"Wedding/Event dates")
+    +chk("s3_wa",lang==="hi"?"WhatsApp permission माँगी":"WhatsApp permission requested"));
+  // 4. Customer experience
+  h+=sec("⭐","4. "+(lang==="hi"?"Customer Experience":"Customer Experience"),
+    num("s4_reviews",lang==="hi"?"Google Reviews मिले":"Google Reviews received")
+    +num("s4_videos",lang==="hi"?"Video testimonials":"Video testimonials")
+    +num("s4_complaints",lang==="hi"?"Complaints आज":"Complaints today")
+    +chk("s4_resolved",lang==="hi"?"सभी complaints हल/report हुईं":"Complaints resolved/reported"));
+  // 5. Rainbow stock
+  var rainbowRows=RAINBOW_CATEGORIES.map(function(cat){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f5f4f0"><span style="font-size:12px">'+cat+'</span><input type="number" value="'+(d.rainbow[cat]||"")+'" onchange="salesRainbow(&#39;'+cat+'&#39;,this.value)" style="width:60px;padding:5px;border:1.5px solid #ddd;border-radius:6px;font-size:13px;text-align:center;font-family:inherit"></div>';
+  }).join("");
+  h+=sec("🌈","5. "+(lang==="hi"?"Rainbow (पुराना) Stock बेचा":"Rainbow Stock Cleared"),
+    '<div style="font-size:10px;color:var(--light);margin-bottom:6px">'+(lang==="hi"?"आज कितने पुराने/dead stock items बेचे:":"Old/dead stock items sold today:")+'</div>'+rainbowRows);
+  // 6. Inventory
+  h+=sec("📦","6. "+(lang==="hi"?"Inventory जिम्मेदारी":"Inventory Responsibility"),
+    chk("s6_running",lang==="hi"?"Top running items check किए":"Top running items checked")
+    +chk("s6_refill",lang==="hi"?"खाली shelf/hook refill किए":"Empty shelves/hooks refilled")
+    +chk("s6_sizes",lang==="hi"?"missing sizes report किए":"Missing sizes reported")
+    +chk("s6_lowstock",lang==="hi"?"low stock report किया":"Low stock reported")
+    +chk("s6_display",lang==="hi"?"गलत display ठीक की":"Wrong displays corrected")
+    +txt("s6_unavailable",lang==="hi"?"अगर कोई running item नहीं था — SKU/नाम":"Unavailable running item — SKU/name"));
+  // 7. Store readiness
+  h+=sec("🏪","7. "+(lang==="hi"?"Store तैयारी":"Store Readiness"),
+    chk("s7_trial",lang==="hi"?"Trial room साफ":"Trial room clean")
+    +chk("s7_display",lang==="hi"?"Display सही से लगे":"Displays arranged")
+    +chk("s7_mannequin",lang==="hi"?"Mannequins सही कपड़ों में":"Mannequins dressed correctly")
+    +chk("s7_counter",lang==="hi"?"Counter साफ":"Counter cleaned")
+    +chk("s7_ready",lang==="hi"?"Store कल के लिए तैयार":"Store ready for tomorrow"));
+  // 8. Learning
+  h+=sec("🎓","8. "+(lang==="hi"?"सीखना":"Learning"),
+    chk("s8_training",lang==="hi"?"आज की 10-min training पूरी की":"Today 10-min training done")
+    +chk("s8_newproduct",lang==="hi"?"कम-से-कम 1 नया product सीखा":"Learned 1 new product"));
+  // 9. Issues
+  h+=sec("⚠️","9. "+(lang==="hi"?"Issues & Support":"Issues & Support"),
+    txt("s9_demand",lang==="hi"?"जो customer demand पूरी नहीं हुई":"Customer demand not fulfilled")
+    +txt("s9_stock",lang==="hi"?"जो stock तुरंत चाहिए":"Stock required urgently")
+    +txt("s9_issue",lang==="hi"?"आज कोई दिक्कत":"Any issue faced today"));
+  h+='<button class="btn green" style="width:100%;margin-top:10px" onclick="submitSalesman()">✓ <span class="hi">'+(lang==="hi"?"Closing Checklist जमा करें":"Submit Closing Checklist")+'</span></button>';
+  return h;
+}
+function salesChk(id){ var d=salesLoad(); if(!d.checks)d.checks={}; d.checks[id]=!d.checks[id]; salesSaveD(d); refreshSalesmanView(); }
+function salesNum(id,v){ var d=salesLoad(); if(!d.nums)d.nums={}; d.nums[id]=v; salesSaveD(d); }
+function salesTxt(id,v){ var d=salesLoad(); if(!d.text)d.text={}; d.text[id]=v; salesSaveD(d); }
+function salesRainbow(cat,v){ var d=salesLoad(); if(!d.rainbow)d.rainbow={}; d.rainbow[cat]=v; salesSaveD(d); }
+function refreshSalesmanView(){ var body=document.getElementById('cl-checklist-body'); if(body) body.innerHTML=buildSalesmanChecklist(); }
+async function submitSalesman(){
+  var d=salesLoad();
+  var name=CURRENT_USER?CURRENT_USER.name:'';
+  var store=CURRENT_USER?CURRENT_USER.store:'';
+  await sendToSheets({ type_:'salesman_closing', staff:name, store:store, date:todayStr2(), salesData:JSON.stringify(d), submittedAt:new Date().toISOString() });
+  // Points: 1 per section completed (9 sections)
+  var sectionsFilled=0;
+  ['s1','s2','s3','s4','s6','s7','s8'].forEach(function(p){ if(Object.keys(d.checks||{}).some(function(k){return k.indexOf(p)===0&&d.checks[k];})) sectionsFilled++; });
+  if(Object.values(d.rainbow||{}).some(function(v){return v;})) sectionsFilled++;
+  var bd=[{reason:(lang==="hi"?"Salesman checklist ("+sectionsFilled+" sections)":"Salesman checklist"),pts:sectionsFilled*POINT_RULES.section_fill}];
+  if(name) awardFormPoints(name,'Salesman Closing',bd);
+  toast('✅ '+(lang==="hi"?"जमा हुई — बढ़िया काम!":"Submitted — great work!"));
+}
+// ── FORCE SHOW LOGIN (always works, ignores session) ──
+function forceShowLogin(){
+  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+  CURRENT_USER=null;
+  var chip=document.getElementById('user-chip'); if(chip) chip.remove();
+  // Show all tabs
+  ['dashboard','checklist','attendance','tasks','camera','productivity','analytics','planner','reports'].forEach(function(t){
+    var b=document.getElementById('nav-'+t); if(b) b.style.display='';
+  });
+  // Reset login screen to step 1
+  _loginSelName=null; _loginSelRoles=[];
+  var rolesStep=document.getElementById('login-step-roles'); if(rolesStep) rolesStep.style.display='none';
+  var nameStep=document.getElementById('login-step-name'); if(nameStep) nameStep.style.display='';
+  renderLoginNames();
+  var overlay=document.getElementById('login-overlay');
+  if(overlay){ overlay.classList.remove('hidden'); overlay.style.display='flex'; }
 }
 function initApp(){
   try{

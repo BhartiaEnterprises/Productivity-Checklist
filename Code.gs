@@ -1,8 +1,12 @@
 // ════════════════════════════════════════════════════════════════════
 // BHARTIA ENTERPRISES — Google Apps Script (Code.gs)
-// Version 4.0 — COMPLETE with ALL fields
+// Version 5.0 — adds Social Media Exec, Billing Exec, Inventory, CRM,
+// BDA, Daily 10-min Training, Salesman Closing, and Points sheets
 // Sheets: Checklist | Attendance | Camera | Productivity | Tasks
 //         Daily Vitals | Digital Media | Staff Assignment | All Records
+//         Social Media Exec | Billing Exec Summary | Billing Customers
+//         Inventory | CRM | BDA | Daily Training (10-min) |
+//         Salesman Closing | Points Log
 // ════════════════════════════════════════════════════════════════════
 
 const OWNER_EMAIL       = 'bhartiacoll@gmail.com';
@@ -10,20 +14,30 @@ const SEND_EMAIL_ALERTS = true;
 
 // ── SHEET NAMES ──────────────────────────────────────────────────────
 const SH = {
-  CHECKLIST    : 'Checklists',
-  ATTENDANCE   : 'Attendance',
-  CAMERA       : 'Camera Reports',
-  GROOMING     : 'Staff Grooming',
-  PRODUCTIVITY : 'Productivity',
-  TASKS        : 'Tasks',
-  DIGITAL      : 'Digital Media',
-  STAFF_ASSIGN : 'Staff Assignment',
-  TRAINING     : 'Training',
-  LEAVE        : 'Leave Applications',
-  INTERCHANGE  : 'Staff Interchange',
-  WA_GROUPS    : 'WA Group Additions',
-  VITALS       : 'Daily Vitals',
-  LOG          : 'All Records',
+  CHECKLIST      : 'Checklists',
+  ATTENDANCE     : 'Attendance',
+  CAMERA         : 'Camera Reports',
+  GROOMING       : 'Staff Grooming',
+  PRODUCTIVITY   : 'Productivity',
+  TASKS          : 'Tasks',
+  DIGITAL        : 'Digital Media',
+  STAFF_ASSIGN   : 'Staff Assignment',
+  TRAINING       : 'Training',
+  LEAVE          : 'Leave Applications',
+  INTERCHANGE    : 'Staff Interchange',
+  WA_GROUPS      : 'WA Group Additions',
+  VITALS         : 'Daily Vitals',
+  LOG            : 'All Records',
+  // ── New in v5.0 ──
+  SOCIAL_EXEC    : 'Social Media Exec',
+  BILLING_EXEC   : 'Billing Exec Summary',
+  BILLING_CUST   : 'Billing Customers',
+  INVENTORY      : 'Inventory',
+  CRM            : 'CRM',
+  BDA            : 'BDA',
+  DAILY_TRAINING : 'Daily Training (10-min)',
+  SALESMAN       : 'Salesman Closing',
+  POINTS         : 'Points Log',
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -40,21 +54,29 @@ function doPost(e) {
     const now  = nowIST();
 
     switch(type) {
-      case 'checklist':    handleChecklist(ss, d, now);    break;
-      case 'attendance':   handleAttendance(ss, d, now);   break;
-      case 'camera':       handleCamera(ss, d, now);       break;
-      case 'productivity': handleProductivity(ss, d, now); break;
-      case 'tasks':        handleTasks(ss, d, now);        break;
+      case 'checklist':        handleChecklist(ss, d, now);       break;
+      case 'attendance':       handleAttendance(ss, d, now);      break;
+      case 'camera':           handleCamera(ss, d, now);          break;
+      case 'productivity':     handleProductivity(ss, d, now);    break;
+      case 'tasks':            handleTasks(ss, d, now);           break;
+      case 'social_exec':      handleSocialExec(ss, d, now);      break;
+      case 'billing_exec':     handleBillingExec(ss, d, now);     break;
+      case 'inventory':        handleInventory(ss, d, now);       break;
+      case 'crm':               handleCRM(ss, d, now);            break;
+      case 'bda':               handleBDA(ss, d, now);            break;
+      case 'training_daily':   handleDailyTraining(ss, d, now);   break;
+      case 'salesman_closing': handleSalesmanClosing(ss, d, now); break;
+      case 'points':           handlePoints(ss, d, now);          break;
     }
 
-    logRecord(ss, d, now);
-    if (SEND_EMAIL_ALERTS) sendEmailAlert(d, type, now);
-
-    // Handle single photo upload — returns Drive URL
+    // photo_upload is handled separately below and should NOT also hit logRecord/email
     if (type === 'photo_upload') {
       const url = handleSinglePhoto(d);
       return jsonResp({ status:'ok', url: url, timestamp: now });
     }
+
+    logRecord(ss, d, now);
+    if (SEND_EMAIL_ALERTS) sendEmailAlert(d, type, now);
 
     return jsonResp({ status: 'ok', timestamp: now });
 
@@ -182,7 +204,7 @@ function doGet(e) {
     }
 
     return ContentService.createTextOutput(
-      'Bhartia Enterprises API v4.0 — Running — ' + nowIST()
+      'Bhartia Enterprises API v5.0 — Running — ' + nowIST()
     ).setMimeType(ContentService.MimeType.TEXT);
 
   } catch(err) {
@@ -215,7 +237,7 @@ function handleChecklist(ss, d, now) {
   const clSheet = getSheet(ss, SH.CHECKLIST);
   if (isEmpty(clSheet)) {
     appendRow(clSheet, [
-      'Timestamp','Store','Sheet Type','Manager','Date','Time',
+      'Timestamp','Store','Sheet Type','Manager','Role','Date','Time',
       'Supervisor','Filled By','Checks Done',
       'Prayer Done','Vision Read',
       'Opening — Lights ON','Opening — Floor Cleaned',
@@ -230,12 +252,13 @@ function handleChecklist(ss, d, now) {
       'Priority 1 Task','Priority 1 Assigned',
       'Priority 2 Task','Priority 2 Assigned',
       'Priority 3 Task','Priority 3 Assigned',
+      'SME Follow-up','Billing Follow-up',
       'Manager Notes','Strategic Notes','Submitted At'
     ]);
     styleHeader(clSheet);
   }
   appendRow(clSheet, [
-    now, d.store||'', sheetType, d.manager||'', d.date||'', d.time||'',
+    now, d.store||'', sheetType, d.manager||'', d.role||'', d.date||'', d.time||'',
     d.supervisor||'', d.filledBy||'', checkedCount,
     checks['infra_prayer']||checks['open_prayer']  ? 'Yes':'No',
     checks['infra_vision']||checks['open_vision']   ? 'Yes':'No',
@@ -261,6 +284,7 @@ function handleChecklist(ss, d, now) {
     priors[0]||'', priAsgn[0]||'',
     priors[1]||'', priAsgn[1]||'',
     priors[2]||'', priAsgn[2]||'',
+    figs.sme_followup||'', figs.billing_followup||'',
     d.mgrNotes||'', d.rsNotes||'', d.submittedAt||now
   ]);
 
@@ -315,7 +339,6 @@ function handleChecklist(ss, d, now) {
   const gmArr  = digCk['dig_gm']    ||[];
   const waFmt  = digCk['dig_wa_fmt']||[];
   const waTm   = digCk['dig_team']  ||[];
-  const waGrpStr = waGrps.map(g=>`${g.group||'—'}(${g.count||0}, ${g.from||''}→${g.to||''})`).join(' | ');
   appendRow(digSheet, [
     now, d.store||'', d.manager||'', d.date||'',
     fbArr.includes('Post 📸')||fbArr.includes('पोस्ट 📸')?'Yes':'No',
@@ -350,7 +373,7 @@ function handleChecklist(ss, d, now) {
     waGrps.map(g=>g.to||'').join(' | ')
   ]);
 
-  // ── 4. TRAINING SHEET ───────────────────────────────────────────
+  // ── 4. TRAINING SHEET (per-checklist manager-assigned training) ─
   const trSheet = getSheet(ss, SH.TRAINING);
   if (isEmpty(trSheet)) {
     appendRow(trSheet,[
@@ -747,6 +770,302 @@ function handleTasks(ss, d, now) {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// SOCIAL MEDIA EXECUTIVE HANDLER (v5.0)
+// Payload: type_, store, date, executive, socialExecData (JSON), submittedAt
+// socialExecData shape: { platformKey: { video:{shot,edited,posted,*_ts}, photo:{captured,edited,posted,*_ts} } }
+// ════════════════════════════════════════════════════════════════════
+function handleSocialExec(ss, d, now) {
+  const sheet = getSheet(ss, SH.SOCIAL_EXEC);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Store','Date','Executive','Platform',
+      'Video — Shot','Video — Edited','Video — Posted','Video Posted Time',
+      'Photo — Captured','Photo — Edited','Photo — Posted','Photo Posted Time',
+      'Fully Posted?','Submitted At'
+    ]);
+    styleHeader(sheet);
+  }
+  let data = {};
+  try { data = JSON.parse(d.socialExecData || '{}'); } catch(e){}
+  const platforms = ['instagram','facebook','youtube','google','whatsapp','telegram','linkedin'];
+  const found = Object.keys(data).length ? Object.keys(data) : platforms;
+  found.forEach(pk => {
+    const pd = data[pk] || {};
+    const v = pd.video || {};
+    const p = pd.photo || {};
+    const fullyPosted = (v.posted || p.posted) ? 'Yes' : 'No';
+    appendRow(sheet,[
+      now, d.store||'', d.date||'', d.executive||'', pk,
+      v.shot?'Yes':'No', v.edited?'Yes':'No', v.posted?'Yes':'No', v.posted_ts||'',
+      p.captured?'Yes':'No', p.edited?'Yes':'No', p.posted?'Yes':'No', p.posted_ts||'',
+      fullyPosted, d.submittedAt||now
+    ]);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// BILLING EXECUTIVE HANDLER (v5.0)
+// Payload: type_, store, date, executive, billingData (JSON array), submittedAt
+// billingData item: {name,mobile,whatsapp,city,occasion,interest,status,bill_no,
+//   bill_amt,source,steps:{lead,xsell,slip,review,coupon},review_done,coupon_done,lost,ts}
+// ════════════════════════════════════════════════════════════════════
+function handleBillingExec(ss, d, now) {
+  let arr = [];
+  try { arr = JSON.parse(d.billingData || '[]'); } catch(e){}
+
+  function stepDone(c, step) {
+    const s = (c.steps && c.steps[step]) || {};
+    return Object.keys(s).some(k => s[k] === true);
+  }
+
+  // ── Summary row ──
+  const sumSheet = getSheet(ss, SH.BILLING_EXEC);
+  if (isEmpty(sumSheet)) {
+    appendRow(sumSheet,[
+      'Timestamp','Store','Date','Executive',
+      'Customers Handled','Mobiles Collected','Bills Made','Lost Customers',
+      'Cross-sell Attempted','Cross-sell Success',
+      'Google Reviews','Coupons Issued','Slips Issued',
+      'Coupon Conversion %','Submitted At'
+    ]);
+    styleHeader(sumSheet);
+  }
+  const handled   = arr.length;
+  const mobiles   = arr.filter(c => c.mobile && String(c.mobile).trim()).length;
+  const bills     = arr.filter(c => c.bill_no && String(c.bill_no).trim()).length;
+  const lost      = arr.filter(c => c.lost).length;
+  const xsellAtt  = arr.filter(c => stepDone(c,'xsell')).length;
+  const xsellSucc = arr.filter(c => (c.steps && c.steps.xsell || {}).added).length;
+  const reviews   = arr.filter(c => c.review_done).length;
+  const coupons   = arr.filter(c => c.coupon_done).length;
+  const slips     = arr.filter(c => (c.steps && c.steps.slip || {}).handed).length;
+  appendRow(sumSheet,[
+    now, d.store||'', d.date||'', d.executive||'',
+    handled, mobiles, bills, lost,
+    xsellAtt, xsellSucc,
+    reviews, coupons, slips,
+    handled>0 ? Math.round(coupons/handled*100)+'%' : '0%',
+    d.submittedAt||now
+  ]);
+
+  // ── Per-customer detail rows ──
+  const custSheet = getSheet(ss, SH.BILLING_CUST);
+  if (isEmpty(custSheet)) {
+    appendRow(custSheet,[
+      'Timestamp','Store','Date','Executive',
+      'Customer Name','Mobile','WhatsApp','City/Area','Occasion','Interest',
+      'Source','Purchase Status','Bill No','Bill Amount',
+      'Lead Step Done','Cross-sell Step Done','Cross-sell Added Item',
+      'Bill/Slip Step Done','Review Step Done','Google Review Done',
+      'Coupon Step Done','₹200 Coupon Issued','Lost Customer?','Captured At'
+    ]);
+    styleHeader(custSheet);
+  }
+  arr.forEach(c => {
+    if (!c || (!c.name && !c.mobile)) return;
+    appendRow(custSheet,[
+      now, d.store||'', d.date||'', d.executive||'',
+      c.name||'', c.mobile||'', c.whatsapp||'', c.city||'', c.occasion||'', c.interest||'',
+      c.source||'', c.status||'', c.bill_no||'', c.bill_amt||'',
+      stepDone(c,'lead')?'Yes':'No',
+      stepDone(c,'xsell')?'Yes':'No',
+      (c.steps && c.steps.xsell || {}).added ? 'Yes':'No',
+      stepDone(c,'slip')?'Yes':'No',
+      stepDone(c,'review')?'Yes':'No',
+      c.review_done?'Yes':'No',
+      stepDone(c,'coupon')?'Yes':'No',
+      c.coupon_done?'Yes':'No',
+      c.lost?'Yes':'No',
+      c.ts||''
+    ]);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// INVENTORY HANDLER (v5.0)
+// Payload: type_, location, date, executive, invData (JSON: {checks,fields}), submittedAt
+// ════════════════════════════════════════════════════════════════════
+function handleInventory(ss, d, now) {
+  const sheet = getSheet(ss, SH.INVENTORY);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Location','Date','Executive',
+      'Fast-Moving SKUs (5-6 days)','Fast-movers Noted?','Noted by Size/Color?',
+      'Slow SKUs (7+ days)','Dead SKUs (15+ days)','Slow Stock Flagged?',
+      'Replenishment List','Replenishment Sent?',
+      'Arranged Size-wise?','Arranged Color-wise?','No Idle Warehouse Stock?',
+      'All Barcoded?','No Missing Barcode?','Stapler Kept?','Barcode Pending (count)',
+      'Trending Items for Store','Missing/Out-of-Stock Items','Manager Updated?',
+      'Submitted At'
+    ]);
+    styleHeader(sheet);
+  }
+  let data = {};
+  try { data = JSON.parse(d.invData || '{}'); } catch(e){}
+  const c = data.checks || {};
+  const f = data.fields || {};
+  appendRow(sheet,[
+    now, d.location||'', d.date||'', d.executive||'',
+    f.fast_sku||'', c.fast_noted?'Yes':'No', c.fast_size_color?'Yes':'No',
+    f.slow_7||'', f.slow_15||'', c.slow_flagged?'Yes':'No',
+    f.replenish_list||'', c.replenish_sent?'Yes':'No',
+    c.arr_size?'Yes':'No', c.arr_color?'Yes':'No', c.arr_nowh?'Yes':'No',
+    c.bc_all?'Yes':'No', c.bc_none?'Yes':'No', c.bc_stapler?'Yes':'No', f.bc_pending||'0',
+    f.mgr_trending||'', f.mgr_missing||'', c.mgr_updated?'Yes':'No',
+    d.submittedAt||now
+  ]);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// CRM HANDLER (v5.0)
+// Payload: type_, store, date, executive, crmData (JSON: {checks,fields}), submittedAt
+// ════════════════════════════════════════════════════════════════════
+function handleCRM(ss, d, now) {
+  const sheet = getSheet(ss, SH.CRM);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Store','Date','Executive',
+      'Numbers Collected (yesterday)','Numbers Added to WA Group',
+      'All New Customers Added?','Welcome Message Sent?',
+      'Birthday/Anniversary Wished?','Followed Up Old Customers?',
+      'Submitted At'
+    ]);
+    styleHeader(sheet);
+  }
+  let data = {};
+  try { data = JSON.parse(d.crmData || '{}'); } catch(e){}
+  const c = data.checks || {};
+  const f = data.fields || {};
+  appendRow(sheet,[
+    now, d.store||'', d.date||'', d.executive||'',
+    f.count_collected||'0', f.count_added||'0',
+    c.added_group?'Yes':'No', c.welcome_sent?'Yes':'No',
+    c.birthday_check?'Yes':'No', c.followup_prev?'Yes':'No',
+    d.submittedAt||now
+  ]);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// BDA (Business Development) HANDLER (v5.0)
+// Payload: type_, store, date, executive, bdaData (JSON: {checks,fields}), submittedAt
+// ════════════════════════════════════════════════════════════════════
+function handleBDA(ss, d, now) {
+  const sheet = getSheet(ss, SH.BDA);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Store','Date','Executive',
+      'Partners Met Today','Partner Type','New Tie-ups (count)',
+      'Referrals Received (count)','Sale from Referrals (₹)',
+      'Contacted New Partner?','Followed Up Existing?',
+      'Explained Offer/Commission?','Gave Card/Catalogue?','Connected on WhatsApp?',
+      'Submitted At'
+    ]);
+    styleHeader(sheet);
+  }
+  let data = {};
+  try { data = JSON.parse(d.bdaData || '{}'); } catch(e){}
+  const c = data.checks || {};
+  const f = data.fields || {};
+  appendRow(sheet,[
+    now, d.store||'', d.date||'', d.executive||'',
+    f.partners_met||'', f.partner_type||'', f.new_tieups||'0',
+    f.referrals_recv||'0', f.referral_sales||'0',
+    c.c_new_partner?'Yes':'No', c.c_followup?'Yes':'No',
+    c.c_offer?'Yes':'No', c.c_card?'Yes':'No', c.c_wa?'Yes':'No',
+    d.submittedAt||now
+  ]);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// DAILY 10-MIN TRAINING HANDLER (v5.0) — every executive, every day
+// Payload: type_, executive, date, done, total, trainData (JSON: {checks}), submittedAt
+// ════════════════════════════════════════════════════════════════════
+function handleDailyTraining(ss, d, now) {
+  const sheet = getSheet(ss, SH.DAILY_TRAINING);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Executive','Date','Topics Done','Topics Total','Completion %',
+      'Greeting','Need-Analysis Qs','7 Sales Stages','Objection Handling',
+      'Cross-sell/Upsell','Google Review Ask','Today Focus Understood',
+      'Submitted At'
+    ]);
+    styleHeader(sheet);
+  }
+  let data = {};
+  try { data = JSON.parse(d.trainData || '{}'); } catch(e){}
+  const c = data.checks || {};
+  const done  = parseInt(d.done||0);
+  const total = parseInt(d.total||7);
+  appendRow(sheet,[
+    now, d.executive||'', d.date||'', done, total,
+    total>0 ? Math.round(done/total*100)+'%' : '0%',
+    c.greeting?'Yes':'No', c.need?'Yes':'No', c.stages?'Yes':'No',
+    c.objection?'Yes':'No', c.crosssell?'Yes':'No', c.review?'Yes':'No',
+    c.today_focus?'Yes':'No',
+    d.submittedAt||now
+  ]);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SALESMAN CLOSING CHECKLIST HANDLER (v5.0)
+// Payload: type_, staff, store, date, salesData (JSON: {checks,nums,rainbow,text}), submittedAt
+// ════════════════════════════════════════════════════════════════════
+function handleSalesmanClosing(ss, d, now) {
+  const sheet = getSheet(ss, SH.SALESMAN);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Staff','Store','Date',
+      'Customers Attended','Bills Generated','Did Not Purchase',
+      'Cross-sold Customers','Accessories Sold',
+      'Names Collected','Mobiles Collected','Wedding/Event Dates',
+      'Google Reviews Received','Video Testimonials','Complaints Today','Complaints Resolved?',
+      'Rainbow (old stock) Items Sold — JSON',
+      'Missing Running Item','Low Stock Reported?',
+      'Unavailable Item / SKU','Stock Required Urgently','Issue Faced Today',
+      'Submitted At'
+    ]);
+    styleHeader(sheet);
+  }
+  let data = {};
+  try { data = JSON.parse(d.salesData || '{}'); } catch(e){}
+  const c = data.checks || {};
+  const n = data.nums   || {};
+  const r = data.rainbow|| {};
+  const t = data.text   || {};
+  appendRow(sheet,[
+    now, d.staff||'', d.store||'', d.date||'',
+    n.s1_customers||'0', n.s1_bills||'0', n.s1_nopurchase||'0',
+    n.s2_crosssold||'0', n.s2_accessories||'0',
+    n.s3_names||'0', n.s3_mobiles||'0', n.s3_dates||'0',
+    n.s4_reviews||'0', n.s4_videos||'0', n.s4_complaints||'0', c.s4_resolved?'Yes':'No',
+    JSON.stringify(r),
+    t.s6_unavailable||'', c.s6_lowstock?'Yes':'No',
+    t.s9_demand||'', t.s9_stock||'', t.s9_issue||'',
+    d.submittedAt||now
+  ]);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// POINTS HANDLER (v5.0) — logs every points award for audit
+// Payload: type_, staff, form, points, breakdown (JSON array of {reason,pts}), date, submittedAt
+// ════════════════════════════════════════════════════════════════════
+function handlePoints(ss, d, now) {
+  const sheet = getSheet(ss, SH.POINTS);
+  if (isEmpty(sheet)) {
+    appendRow(sheet,[
+      'Timestamp','Staff','Form','Total Points','Breakdown','Date','Submitted At'
+    ]);
+    styleHeader(sheet);
+  }
+  let breakdown = [];
+  try { breakdown = JSON.parse(d.breakdown || '[]'); } catch(e){}
+  const breakdownStr = breakdown.map(b => (b.reason||'')+': '+(b.pts>=0?'+':'')+b.pts).join(' | ');
+  appendRow(sheet,[
+    now, d.staff||'', d.form||'', d.points||'0', breakdownStr, d.date||'', d.submittedAt||now
+  ]);
+}
+
+// ════════════════════════════════════════════════════════════════════
 // MASTER LOG
 // ════════════════════════════════════════════════════════════════════
 function logRecord(ss, d, now) {
@@ -761,7 +1080,7 @@ function logRecord(ss, d, now) {
   }
   appendRow(sheet,[
     now, d.type_||'checklist', d.sheetType||'',
-    d.store||'', d.manager||d.staff||d.by||'',
+    d.store||d.location||'', d.manager||d.staff||d.by||d.executive||'',
     d.date||'', d.time||'', d.supervisor||'', d.filledBy||'',
     d.checks||'', d.figures||'', d.attendance||'',
     d.mgrNotes||'', d.submittedAt||now
@@ -796,6 +1115,40 @@ function sendEmailAlert(d, type, now) {
       body = 'Staff:'+d.staff+'\nStore:'+d.store+
              '\nDate:'+d.date+'\nBlock:'+d.block+'min';
 
+    } else if (type==='social_exec') {
+      subject = '📱 Social Media — '+d.store+' — '+d.executive+' — '+d.date;
+      body = 'Store:'+d.store+'\nExecutive:'+d.executive+'\nDate:'+d.date;
+
+    } else if (type==='billing_exec') {
+      let arr=[]; try{arr=JSON.parse(d.billingData||'[]');}catch(e){}
+      subject = '💳 Billing — '+d.store+' — '+d.executive+' — '+d.date;
+      body = 'Store:'+d.store+'\nExecutive:'+d.executive+'\nDate:'+d.date+
+             '\nCustomers handled:'+arr.length;
+
+    } else if (type==='inventory') {
+      subject = '📦 Inventory — '+d.location+' — '+d.executive+' — '+d.date;
+      body = 'Location:'+d.location+'\nExecutive:'+d.executive+'\nDate:'+d.date;
+
+    } else if (type==='crm') {
+      subject = '💬 CRM — '+d.store+' — '+d.executive+' — '+d.date;
+      body = 'Store:'+d.store+'\nExecutive:'+d.executive+'\nDate:'+d.date;
+
+    } else if (type==='bda') {
+      subject = '🤝 BDA — '+d.store+' — '+d.executive+' — '+d.date;
+      body = 'Store:'+d.store+'\nExecutive:'+d.executive+'\nDate:'+d.date;
+
+    } else if (type==='training_daily') {
+      subject = '🎓 Daily Training — '+d.executive+' — '+d.date;
+      body = 'Executive:'+d.executive+'\nDate:'+d.date+'\nDone:'+d.done+'/'+d.total;
+
+    } else if (type==='salesman_closing') {
+      subject = '🛍️ Salesman Closing — '+d.store+' — '+d.staff+' — '+d.date;
+      body = 'Staff:'+d.staff+'\nStore:'+d.store+'\nDate:'+d.date;
+
+    } else if (type==='points') {
+      // Skip email for points — too frequent/noisy
+      return;
+
     } else {
       // Checklist
       let figs={}; try{figs=JSON.parse(d.figures||'{}');}catch(e){}
@@ -808,6 +1161,7 @@ function sendEmailAlert(d, type, now) {
         '₹'+Math.round(parseFloat(figs.total_sales)/parseFloat(figs.bills)):'—';
       subject = '📋 '+st+' — '+d.store+' — '+(d.manager||'?')+' — '+d.date;
       body = 'Store:'+d.store+' | Type:'+st+' | Manager:'+(d.manager||'—')+
+             ' | Role:'+(d.role||'—')+
              ' | Date:'+d.date+' | Time:'+(d.time||'—')+
              '\n\nBills:'+bills+' | Sales:'+sales+' | Avg Bill:'+avgB+
              '\nWalk-ins:'+(figs.walkin||'—')+' | New Customers:'+(figs.newcust||'—')+
@@ -825,7 +1179,7 @@ function sendEmailAlert(d, type, now) {
       });
       body+='\n\nSubmitted: '+now;
     }
-    MailApp.sendEmail(OWNER_EMAIL, subject, body);
+    if (subject) MailApp.sendEmail(OWNER_EMAIL, subject, body);
   } catch(err) { Logger.log('Email error:'+err); }
 }
 
@@ -985,7 +1339,10 @@ function createAllSheets() {
     SH.TASKS, SH.DIGITAL,
     SH.STAFF_ASSIGN, SH.TRAINING,
     SH.LEAVE, SH.INTERCHANGE,
-    SH.WA_GROUPS, SH.VITALS, SH.LOG
+    SH.WA_GROUPS, SH.VITALS, SH.LOG,
+    SH.SOCIAL_EXEC, SH.BILLING_EXEC, SH.BILLING_CUST,
+    SH.INVENTORY, SH.CRM, SH.BDA,
+    SH.DAILY_TRAINING, SH.SALESMAN, SH.POINTS
   ];
   allSheets.forEach(name => {
     const exists = !!ss.getSheetByName(name);
@@ -1014,7 +1371,10 @@ function testEmail() {
     '• Checklists\n• Attendance\n• Camera Reports\n• Staff Grooming\n'+
     '• Productivity\n• Tasks\n• Digital Media\n• Staff Assignment\n'+
     '• Training\n• Leave Applications\n• Staff Interchange\n'+
-    '• Daily Vitals\n• All Records\n\n'+
+    '• Daily Vitals\n• All Records\n'+
+    '• Social Media Exec\n• Billing Exec Summary\n• Billing Customers\n'+
+    '• Inventory\n• CRM\n• BDA\n• Daily Training (10-min)\n'+
+    '• Salesman Closing\n• Points Log\n\n'+
     'Setup complete! ✅'
   );
   Logger.log('✅ Test email sent to '+OWNER_EMAIL);
@@ -1028,7 +1388,7 @@ function testFullSubmission() {
 
   const d = {
     type_:'checklist', sheetType:'closing', store:'BC',
-    manager:'Sikander', date:today, time:'21:00',
+    manager:'Sikander', role:'Manager', date:today, time:'21:00',
     supervisor:'Neel', filledBy:'Manager',
     checks: JSON.stringify({
       infra_prayer:true, infra_vision:true, infra_lights:true,
@@ -1073,4 +1433,84 @@ function testFullSubmission() {
   logRecord(ss, d, now);
   Logger.log('✅ Test submission complete!');
   Logger.log('📊 Check these sheets: Checklists, Staff Assignment, Digital Media, Training, Leave Applications, Daily Vitals');
+}
+
+// RUN FIFTH — writes sample data to all NEW v5.0 sheets
+function testNewSheetsSubmission() {
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const now = nowIST();
+  const today = new Date().toISOString().slice(0,10);
+
+  handleSocialExec(ss, {
+    store:'BC', date:today, executive:'Test SME',
+    socialExecData: JSON.stringify({
+      instagram:{ video:{shot:true,edited:true,posted:true,posted_ts:'11:30'}, photo:{captured:true,edited:false,posted:false} },
+      facebook: { video:{shot:true,edited:false,posted:false}, photo:{captured:false,edited:false,posted:false} }
+    }),
+    submittedAt:new Date().toISOString()
+  }, now);
+
+  handleBillingExec(ss, {
+    store:'BC', date:today, executive:'Test Billing',
+    billingData: JSON.stringify([
+      {name:'Rahul Sharma', mobile:'9876543210', whatsapp:'9876543210', city:'Sikar', occasion:'Wedding',
+       interest:'Sherwani', status:'Purchased', bill_no:'B123', bill_amt:'25000', source:'Walk-in',
+       steps:{lead:{name:true,mobile:true}, xsell:{suggested:true,added:true}, slip:{bill:true,handed:true}, review:{asked:true}, coupon:{}},
+       review_done:true, coupon_done:true, lost:false, ts:'11:00'}
+    ]),
+    submittedAt:new Date().toISOString()
+  }, now);
+
+  handleInventory(ss, {
+    location:'HO Warehouse', date:today, executive:'Test Inventory',
+    invData: JSON.stringify({
+      checks:{fast_noted:true, fast_size_color:true, slow_flagged:true, replenish_sent:true, arr_size:true, bc_all:true, mgr_updated:true},
+      fields:{fast_sku:'Sherwani M cream', slow_7:'Old jodhpuri stock', replenish_list:'Kurta L blue x10', bc_pending:'0'}
+    }),
+    submittedAt:new Date().toISOString()
+  }, now);
+
+  handleCRM(ss, {
+    store:'BC', date:today, executive:'Test CRM',
+    crmData: JSON.stringify({
+      checks:{added_group:true, welcome_sent:true, followup_prev:true},
+      fields:{count_collected:'15', count_added:'15'}
+    }),
+    submittedAt:new Date().toISOString()
+  }, now);
+
+  handleBDA(ss, {
+    store:'VKS', date:today, executive:'Test BDA',
+    bdaData: JSON.stringify({
+      checks:{c_new_partner:true, c_followup:true, c_offer:true, c_wa:true},
+      fields:{partners_met:'ABC Wedding Planner', partner_type:'Wedding Planner', new_tieups:'1', referrals_recv:'3', referral_sales:'45000'}
+    }),
+    submittedAt:new Date().toISOString()
+  }, now);
+
+  handleDailyTraining(ss, {
+    executive:'Test Executive', date:today, done:6, total:7,
+    trainData: JSON.stringify({checks:{greeting:true,need:true,stages:true,objection:true,crosssell:true,review:true}}),
+    submittedAt:new Date().toISOString()
+  }, now);
+
+  handleSalesmanClosing(ss, {
+    staff:'Test Salesman', store:'BC', date:today,
+    salesData: JSON.stringify({
+      checks:{s1_attend:true, s1_ask:true, s2_addl:true, s4_resolved:true, s6_lowstock:true},
+      nums:{s1_customers:'12', s1_bills:'8', s2_crosssold:'3', s3_names:'10', s3_mobiles:'9', s4_reviews:'2'},
+      rainbow:{'Sherwani':'2','Kurta Pajama':'3'},
+      text:{s9_issue:'None'}
+    }),
+    submittedAt:new Date().toISOString()
+  }, now);
+
+  handlePoints(ss, {
+    staff:'Test Executive', form:'Test Form', points:'10',
+    breakdown: JSON.stringify([{reason:'Section filled',pts:1},{reason:'Punctual',pts:5},{reason:'Early bird',pts:3}]),
+    date:today, submittedAt:new Date().toISOString()
+  }, now);
+
+  Logger.log('✅ v5.0 test submissions complete!');
+  Logger.log('📊 Check: Social Media Exec, Billing Exec Summary, Billing Customers, Inventory, CRM, BDA, Daily Training (10-min), Salesman Closing, Points Log');
 }
