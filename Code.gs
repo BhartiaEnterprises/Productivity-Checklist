@@ -86,6 +86,13 @@ function doPost(e) {
       return jsonResp({ status:'ok', url: url, timestamp: now });
     }
 
+    // task_sync (Phase 1): background upsert — no All-Records log, no email
+    if (type === 'task_sync') {
+      handleTaskSync(ss, d, now);
+      logCid(ss, cid, type);
+      return jsonResp({ status:'ok', timestamp: now });
+    }
+
     logRecord(ss, d, now);
     logCid(ss, cid, type);
     if (SEND_EMAIL_ALERTS) sendEmailAlert(d, type, now);
@@ -172,6 +179,11 @@ function doGet(e) {
   try {
     const action = safeParam(e, 'action');
     const ss     = SpreadsheetApp.getActiveSpreadsheet();
+
+    // Phase 1: per-store per-date fill state (app dashboard + WhatsApp triggers)
+    if (action === 'state') {
+      return getStateEndpoint(ss, safeParam(e,'date'), safeParam(e,'store'));
+    }
 
     // Phase 0: read-back verification — did submission <cid> actually land?
     if (action === 'confirm') {
@@ -1316,6 +1328,159 @@ function getSheetData(ss, sheetName, store, dateOrMonth) {
 // ════════════════════════════════════════════════════════════════════
 // UTILITY FUNCTIONS
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+// PHASE 1 — TASKS SYNC (upsert by Task ID) + STATE ENDPOINT
+// ════════════════════════════════════════════════════════════════════
+const TASK_HEADERS = [
+  'Task ID','Store','Assigned To','Added By','Section / Source','Task',
+  'Priority','Status','Due','Created Date','Done At','Carried?','Carried From','Updated At'
+];
+function getTasksSheet(ss) {
+  let sh = ss.getSheetByName(SH.TASKS);
+  // Migrate: if an old-format Tasks sheet exists (no Task ID column), park it aside
+  if (sh && sh.getLastRow() > 0 && String(sh.getRange(1,1,1,1).getValue()) !== 'Task ID'
+        && String(sh.getRange(1,1,1,1).getValue()) !== '') {
+    try { sh.setName('Tasks (old)'); } catch(e){}
+    sh = null;
+  }
+  if (!sh) sh = ss.getSheetByName(SH.TASKS) || ss.insertSheet(SH.TASKS);
+  if (sh.getLastRow() === 0) { appendRow(sh, TASK_HEADERS); styleHeader(sh); }
+  return sh;
+}
+function handleTaskSync(ss, d, now) {
+  const sheet = getTasksSheet(ss);
+  let tasks = []; try { tasks = JSON.parse(d.tasks||'[]'); } catch(e){}
+  let dels  = []; try { dels  = JSON.parse(d.deletedIds||'[]'); } catch(e){}
+  if (!tasks.length && !dels.length) return;
+  const data = sheet.getDataRange().getValues();
+  const idRow = {};
+  for (let i = 1; i < data.length; i++) idRow[String(data[i][0])] = i + 1;
+  tasks.forEach(t => {
+    if (!t || !t.id || !t.desc) return;
+    const row = [
+      String(t.id), t.store||'', t.assignedTo||'', t.addedBy||'',
+      t.source||'', t.desc||'', t.priority||'normal', t.status||'pending',
+      t.due||'', t.date||'', t.doneAt||'', t.carried?'Yes':'No',
+      t.carriedFrom||'', now
+    ];
+    const r = idRow[String(t.id)];
+    if (r) sheet.getRange(r, 1, 1, row.length).setValues([row]);
+    else { appendRow(sheet, row); idRow[String(t.id)] = sheet.getLastRow(); }
+  });
+  dels.forEach(id => {
+    const r = idRow[String(id)];
+    if (r) { sheet.getRange(r, 8).setValue('deleted'); sheet.getRange(r, 14).setValue(now); }
+  });
+}
+// Normalize a sheet cell to 'yyyy-MM-dd' (cells may be Date objects or strings)
+function dstr(v) {
+  try {
+    if (Object.prototype.toString.call(v) === '[object Date]')
+      return Utilities.formatDate(v, 'Asia/Kolkata', 'yyyy-MM-dd');
+  } catch(e){}
+  return String(v||'').slice(0, 10);
+}
+// STATE ENDPOINT — per store per date: which forms are filled vs pending.
+// Read by the app dashboard AND (Phase 3) the WhatsApp reminder triggers.
+function getStateEndpoint(ss, date, storeFilter) {
+  const today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
+  date = date || today;
+  const cacheKey = 'state_' + date + '_' + (storeFilter||'ALL');
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(cacheKey);
+  if (hit) return jsonResp(JSON.parse(hit));
+
+  const stores = storeFilter ? [storeFilter] : ['BC','VKS'];
+  const state = { date: date, generatedAt: nowIST(), stores: {} };
+  stores.forEach(s => {
+    state.stores[s] = {
+      opening:    { done:false, by:'', time:'' },
+      closing:    { done:false, by:'', time:'' },
+      attendance: { done:false, staffMarked:0 },
+      camera:     { done:false, photos:0 },
+      productivity: { staffSubmitted: [] },
+      tasks:      {}   // per person: {pending, doneToday}
+    };
+  });
+  function lastRows(sheetName, max) {
+    const sh = ss.getSheetByName(sheetName);
+    if (!sh || sh.getLastRow() < 2) return { header: [], rows: [] };
+    const total = sh.getLastRow();
+    const start = Math.max(2, total - (max||500) + 1);
+    return {
+      header: sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String),
+      rows: sh.getRange(start, 1, total - start + 1, sh.getLastColumn()).getValues()
+    };
+  }
+  function col(header, name) { return header.indexOf(name); }
+
+  // Checklists → opening / closing
+  const cl = lastRows(SH.CHECKLIST, 600);
+  if (cl.rows.length) {
+    const cSt = col(cl.header,'Store'), cTy = col(cl.header,'Sheet Type'),
+          cDt = col(cl.header,'Date'), cMg = col(cl.header,'Manager'), cTm = col(cl.header,'Time');
+    cl.rows.forEach(r => {
+      const s = String(r[cSt]||'');
+      if (!state.stores[s] || dstr(r[cDt]) !== date) return;
+      const ty = String(r[cTy]||'').toLowerCase();
+      if (ty === 'opening') state.stores[s].opening = { done:true, by:String(r[cMg]||''), time:String(r[cTm]||'') };
+      if (ty === 'closing') state.stores[s].closing = { done:true, by:String(r[cMg]||''), time:String(r[cTm]||'') };
+    });
+  }
+  // Attendance
+  const at = lastRows(SH.ATTENDANCE, 800);
+  if (at.rows.length) {
+    const aSt = col(at.header,'Store'), aDt = col(at.header,'Date');
+    at.rows.forEach(r => {
+      const s = String(r[aSt]||'');
+      if (!state.stores[s] || dstr(r[aDt]) !== date) return;
+      state.stores[s].attendance.done = true;
+      state.stores[s].attendance.staffMarked++;
+    });
+  }
+  // Camera
+  const cm = lastRows(SH.CAMERA, 600);
+  if (cm.rows.length) {
+    const mSt = col(cm.header,'Store'), mDt = col(cm.header,'Date');
+    cm.rows.forEach(r => {
+      const s = String(r[mSt]||'');
+      if (!state.stores[s] || dstr(r[mDt]) !== date) return;
+      state.stores[s].camera.done = true;
+      state.stores[s].camera.photos++;
+    });
+  }
+  // Productivity
+  const pr = lastRows(SH.PRODUCTIVITY, 400);
+  if (pr.rows.length) {
+    const pSt = col(pr.header,'Store'), pDt = col(pr.header,'Date'), pNm = col(pr.header,'Staff');
+    pr.rows.forEach(r => {
+      const s = String(r[pSt]||'');
+      if (!state.stores[s] || dstr(r[pDt]) !== date) return;
+      const nm = String(r[pNm]||'');
+      if (nm && state.stores[s].productivity.staffSubmitted.indexOf(nm) < 0)
+        state.stores[s].productivity.staffSubmitted.push(nm);
+    });
+  }
+  // Tasks (new layout) — pending counts + done-today per assignee
+  const tk = lastRows(SH.TASKS, 1000);
+  if (tk.header[0] === 'Task ID' && tk.rows.length) {
+    tk.rows.forEach(r => {
+      const s = String(r[1]||''), who = String(r[2]||'') || 'Unassigned';
+      const status = String(r[7]||'');
+      if (status === 'deleted') return;
+      const target = state.stores[s] ? [s] : stores;   // storeless tasks count everywhere
+      target.forEach(st => {
+        if (!state.stores[st].tasks[who]) state.stores[st].tasks[who] = { pending:0, doneToday:0 };
+        if (status === 'pending') state.stores[st].tasks[who].pending++;
+        else if (status === 'done' && dstr(r[10]) === date) state.stores[st].tasks[who].doneToday++;
+      });
+    });
+  }
+  const payload = { status:'ok', state: state };
+  try { cache.put(cacheKey, JSON.stringify(payload), 60); } catch(e){}
+  return jsonResp(payload);
+}
+
 // ════════════════════════════════════════════════════════════════════
 // PHASE 0 — SUBMISSION LOG (duplicate protection + read-back verification)
 // ════════════════════════════════════════════════════════════════════

@@ -2513,7 +2513,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.0-phase0';
+var APP_VERSION = '7.1-phase1';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -2643,7 +2643,7 @@ function submitStatusLine(status){
 }
 window.addEventListener('online', function(){ syncOutbox(false); });
 setInterval(function(){ syncOutbox(false); }, 90000);
-document.addEventListener('DOMContentLoaded', function(){ updateOutboxBadge(); setTimeout(function(){ syncOutbox(false); }, 4000); });
+document.addEventListener('DOMContentLoaded', function(){ updateOutboxBadge(); setTimeout(function(){ syncOutbox(false); }, 4000); setTimeout(function(){ try{ doTaskSync(); }catch(e){} }, 8000); });
 console.log('BE Productivity App ' + APP_VERSION);
 // ── Re-compress image ────────────────────────────────────────────
 function recompressImage(base64, maxW, quality){
@@ -2874,7 +2874,54 @@ let ownerStoreFilter  = 'BC';
 let modalContext      = null; // checklist item context if opened from inline
 // ── STORAGE ──
 function loadTasks(){ try{ return JSON.parse(localStorage.getItem(TASK_KEY)||'[]'); }catch(e){return[];} }
-function saveTasks(tasks){ localStorage.setItem(TASK_KEY, JSON.stringify(tasks)); }
+function saveTasks(tasks){ localStorage.setItem(TASK_KEY, JSON.stringify(tasks)); scheduleTaskSync(); }
+// ── PHASE 1: TASKS → GOOGLE SHEETS SYNC ─────────────────────────
+// Every task change (add/done/delete/reassign/due/carry) auto-syncs
+// to the "Tasks" sheet via the reliable transport (retry + offline queue).
+var TASK_DEL_KEY = 'be_task_deleted_v1';
+var _taskSyncTimer = null;
+function scheduleTaskSync(){
+  try{ clearTimeout(_taskSyncTimer); }catch(e){}
+  _taskSyncTimer = setTimeout(function(){ doTaskSync(); }, 4000);
+}
+function loadDeletedTaskIds(){ try{ return JSON.parse(localStorage.getItem(TASK_DEL_KEY)||'[]'); }catch(e){ return []; } }
+function doTaskSync(){
+  try{
+    var d = new Date(); d.setDate(d.getDate()-14);
+    var cutoff = d.toISOString().slice(0,10);
+    // Sync everything pending + anything touched in the last 14 days
+    var tasks = loadTasks().filter(function(t){
+      if(!t || !t.id || !t.desc) return false;
+      if(t.status==='pending') return true;
+      if(t.date && String(t.date) >= cutoff) return true;
+      if(t.doneAt && String(t.doneAt).slice(0,10) >= cutoff) return true;
+      return false;
+    });
+    var deleted = loadDeletedTaskIds();
+    if(tasks.length===0 && deleted.length===0) return;
+    sendToSheets({
+      type_: 'task_sync',
+      tasks: JSON.stringify(tasks),
+      deletedIds: JSON.stringify(deleted),
+      submittedAt: new Date().toISOString()
+    }).then(function(res){
+      // Payload (incl. tombstones) is safely delivered or queued in the outbox
+      if(res && (res.ok || res.queued)) localStorage.setItem(TASK_DEL_KEY, '[]');
+    });
+  }catch(e){ console.warn('task sync:', e); }
+}
+// ── PHASE 1: SERVER STATE (filled vs pending, per store per date) ──
+function fetchServerState(date){
+  return new Promise(function(resolve){
+    try{
+      if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){ resolve(null); return; }
+      fetch(SCRIPT_URL+'?action=state&date='+encodeURIComponent(date||todayStr2())+'&_ts='+Date.now(), {method:'GET', redirect:'follow'})
+        .then(function(r){ return r.json(); })
+        .then(function(j){ resolve(j && j.status==='ok' ? j.state : null); })
+        .catch(function(){ resolve(null); });
+    }catch(e){ resolve(null); }
+  });
+}
 function todayStr2(){
   // IST date (UTC+5:30) so late-evening tasks don't roll to next day
   var d=new Date();
@@ -3070,6 +3117,8 @@ function toggleTaskDone(id){
 }
 function deleteTask(id){
   if(!confirm(lang==='hi'?'इस टास्क को हटाएं?':'Delete this task?')) return;
+  // Tombstone so the Sheets row gets marked 'deleted' on next sync
+  try{ var _dels=loadDeletedTaskIds(); if(_dels.indexOf(id)<0) _dels.push(id); localStorage.setItem(TASK_DEL_KEY, JSON.stringify(_dels)); }catch(e){}
   saveTasks(loadTasks().filter(t=>t.id!==id));
   renderMyTasks();
   if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
@@ -4576,9 +4625,32 @@ function refreshDashboard(){
   if(lastEl) lastEl.textContent = 'Last: ' + new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
   if(allReports.length===0 && SCRIPT_URL!=='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){
     loadReports().then(function(){renderDashboardContent(today);}).catch(function(){renderDashboardContent(today);});
-    return;
+  } else {
+    renderDashboardContent(today);
   }
-  renderDashboardContent(today);
+  // Phase 1: overlay the authoritative server state (what actually landed in Sheets)
+  applyServerStateToDashboard(today);
+}
+function applyServerStateToDashboard(today){
+  fetchServerState(today).then(function(st){
+    if(!st || !st.stores) return;
+    function setS2(id,ok){
+      var el=document.getElementById(id); if(!el) return;
+      el.textContent = ok?'✅':'⏳';
+      el.className = 'cmd-check-status ' + (ok?'yes':'no');
+    }
+    ['BC','VKS'].forEach(function(store){
+      var s = st.stores[store]; if(!s) return;
+      var p = store.toLowerCase();
+      setS2('cmd-'+p+'-open',  !!(s.opening && s.opening.done));
+      setS2('cmd-'+p+'-att',   !!(s.attendance && s.attendance.done));
+      setS2('cmd-'+p+'-cam',   !!(s.camera && s.camera.done));
+      setS2('cmd-'+p+'-close', !!(s.closing && s.closing.done));
+      var done=[s.opening,s.attendance,s.camera,s.closing].filter(function(x){return x&&x.done;}).length;
+      var pctEl=document.getElementById('cmd-'+p+'-pct');
+      if(pctEl) pctEl.textContent = done+'/4 '+Math.round(done/4*100)+'% ✓srv';
+    });
+  });
 }
 function renderDashboardContent(today){
   var todayRecs = allReports.filter(function(r){return r.date===today;});
