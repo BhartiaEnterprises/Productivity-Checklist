@@ -38,6 +38,8 @@ const SH = {
   DAILY_TRAINING : 'Daily Training (10-min)',
   SALESMAN       : 'Salesman Closing',
   POINTS         : 'Points Log',
+  // ── New in v5.1 (Phase 0) ──
+  SUBMITLOG      : 'Submit Log',
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -52,6 +54,14 @@ function doPost(e) {
     const d    = e.parameter;
     const type = d.type_ || 'checklist';
     const now  = nowIST();
+
+    // ── Phase 0: duplicate protection ──
+    // The app retries failed posts and re-sends queued ones. Each submission
+    // carries a unique cid; if we've already processed it, skip silently.
+    const cid = d.cid || '';
+    if (cid && isDuplicateCid(cid)) {
+      return jsonResp({ status:'ok', dup:true, timestamp: now });
+    }
 
     switch(type) {
       case 'checklist':        handleChecklist(ss, d, now);       break;
@@ -72,10 +82,12 @@ function doPost(e) {
     // photo_upload is handled separately below and should NOT also hit logRecord/email
     if (type === 'photo_upload') {
       const url = handleSinglePhoto(d);
+      logCid(ss, cid, type);
       return jsonResp({ status:'ok', url: url, timestamp: now });
     }
 
     logRecord(ss, d, now);
+    logCid(ss, cid, type);
     if (SEND_EMAIL_ALERTS) sendEmailAlert(d, type, now);
 
     return jsonResp({ status: 'ok', timestamp: now });
@@ -161,6 +173,12 @@ function doGet(e) {
     const action = safeParam(e, 'action');
     const ss     = SpreadsheetApp.getActiveSpreadsheet();
 
+    // Phase 0: read-back verification — did submission <cid> actually land?
+    if (action === 'confirm') {
+      const cid = safeParam(e,'cid');
+      return jsonResp({ status:'ok', found: cid ? isDuplicateCid(cid) : false });
+    }
+
     if (action === 'getReports') {
       return getReports(ss,
         safeParam(e,'store'), safeParam(e,'date'),
@@ -204,7 +222,7 @@ function doGet(e) {
     }
 
     return ContentService.createTextOutput(
-      'Bhartia Enterprises API v5.0 — Running — ' + nowIST()
+      'Bhartia Enterprises API v5.1 — Running — ' + nowIST()
     ).setMimeType(ContentService.MimeType.TEXT);
 
   } catch(err) {
@@ -588,10 +606,15 @@ function handleCamera(ss, d, now) {
   // Parse photo data sent from app
   let photoData = {};
   try { photoData = JSON.parse(d.photoData||'{}'); } catch(e){}
+  // Phase 0: new app versions upload photos individually first, then send
+  // ready-made Drive links here — no base64 re-upload needed.
+  let photoUrls = {};
+  try { photoUrls = JSON.parse(d.photoUrls||'{}'); } catch(e){}
 
-  // Save each photo to Drive and get URL
+  // Save each photo to Drive and get URL (or use the pre-uploaded link)
   const urls = {};
   [...openCats,...closeCats].forEach(cat => {
+    if (photoUrls[cat.key]) { urls[cat.key] = photoUrls[cat.key]; return; }
     const b64 = photoData[cat.key] || d[cat.key+'_b64'] || '';
     if (b64 && b64.length > 100) {
       const fname = store+'_'+date+'_'+cat.key+'_'+by.replace(/\s/g,'_')+'.jpg';
@@ -666,8 +689,8 @@ function handleCamera(ss, d, now) {
   Object.entries(grooming).forEach(([nm,g]) => {
     if (!nm) return;
     const checks = g.checks||[];
-    let groomPhotoUrl = '';
-    if (g.thumb && g.thumb.length > 100) {
+    let groomPhotoUrl = g.url || '';
+    if (!groomPhotoUrl && g.thumb && g.thumb.length > 100) {
       const fname = store+'_'+date+'_groom_'+nm.replace(/\s/g,'_')+'.jpg';
       groomPhotoUrl = savePhotoToDrive(g.thumb, fname, store, date);
     }
@@ -1293,6 +1316,33 @@ function getSheetData(ss, sheetName, store, dateOrMonth) {
 // ════════════════════════════════════════════════════════════════════
 // UTILITY FUNCTIONS
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+// PHASE 0 — SUBMISSION LOG (duplicate protection + read-back verification)
+// ════════════════════════════════════════════════════════════════════
+function isDuplicateCid(cid) {
+  if (!cid) return false;
+  try {
+    const cache = CacheService.getScriptCache();
+    if (cache.get('cid_' + cid)) return true;
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ss.getSheetByName(SH.SUBMITLOG);
+    if (!sh || sh.getLastRow() < 2) return false;
+    const found = sh.createTextFinder(cid).matchEntireCell(true).findNext();
+    return !!found;
+  } catch(err) { return false; }
+}
+function logCid(ss, cid, type) {
+  if (!cid) return;
+  try {
+    CacheService.getScriptCache().put('cid_' + cid, '1', 21600); // 6h fast-path
+    const sh = getSheet(ss, SH.SUBMITLOG);
+    if (isEmpty(sh)) { appendRow(sh, ['Timestamp','CID','Type']); styleHeader(sh); }
+    appendRow(sh, [nowIST(), cid, type]);
+    // Keep the log lean — trim oldest 500 once it passes 3000 rows
+    if (sh.getLastRow() > 3000) sh.deleteRows(2, 500);
+  } catch(err) { Logger.log('logCid error: ' + err); }
+}
+
 function nowIST() {
   return new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
 }

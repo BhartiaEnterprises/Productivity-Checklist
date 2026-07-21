@@ -2250,8 +2250,11 @@ function buildClReview(){
   </div>`;
 }
 async function clSubmit(){
+  // Duplicate-submit guard
+  if(_inflightForms['checklist']) return;
   // Validate before submit
   if(!validateBeforeSubmit()) return;
+  _inflightForms['checklist']=true;
   const mgr=document.getElementById('cl-manager')?.value||'';
   const date=document.getElementById('cl-date')?.value||'';
   const time=document.getElementById('cl-time')?.value||'';
@@ -2265,7 +2268,9 @@ async function clSubmit(){
     figures:JSON.stringify(clState.figures),assignments:JSON.stringify(clState.assignments),
     priorities:JSON.stringify(clState.priorities),priAssign:JSON.stringify(clState.priAssign),
     mgrNotes:clState.mgrNotes,rsNotes:clState.rsNotes,submittedAt:new Date().toISOString()};
-  await sendToSheets(payload);
+  var _clResult;
+  try{ _clResult = await submitAndVerify(payload); }
+  finally{ _inflightForms['checklist']=false; }
   document.getElementById('cl-loading').style.display='none';
   document.getElementById('cl-success').style.display='block';
   // Award points for filling checklist
@@ -2280,7 +2285,7 @@ async function clSubmit(){
   document.getElementById('cl-success-msg').textContent=`${clState.store} ${clState.type} — ${mgr} — ${date}`;
   showNavGuide(clState.type);
   try{ checkAndAwardChecklistPoints(); }catch(e){}
-  document.getElementById('cl-success-summary').innerHTML=`<div class="sum-row"><span class="sum-key">Store</span><span class="sum-val">${clState.store}</span></div><div class="sum-row"><span class="sum-key">Items checked</span><span class="sum-val" style="color:var(--green)">${checked} ✓</span></div>${clState.figures.bills?`<div class="sum-row"><span class="sum-key">Bills</span><span class="sum-val">${clState.figures.bills}</span></div>`:''}`;
+  document.getElementById('cl-success-summary').innerHTML=`<div class="sum-row"><span class="sum-key">Store</span><span class="sum-val">${clState.store}</span></div><div class="sum-row"><span class="sum-key">Items checked</span><span class="sum-val" style="color:var(--green)">${checked} ✓</span></div>${clState.figures.bills?`<div class="sum-row"><span class="sum-key">Bills</span><span class="sum-val">${clState.figures.bills}</span></div>`:''}` + submitStatusLine(_clResult.status);
 }
 function clReset(){
   clState={store:null,type:null,step:0,checks:{},times:{},repairs:{},figures:{},assignments:{},priorities:['','',''],priAssign:['','',''],mgrNotes:'',rsNotes:''};
@@ -2356,19 +2361,23 @@ function updateAttReportStatus(){
     : `<span style="color:var(--light)">${lang==='hi'?'आज कोई उपस्थिति जमा नहीं हुई।':'No attendance submitted today yet.'}</span>`;
 }
 async function attSubmit(){
+  if(_inflightForms['attendance']) return;
   const store=document.getElementById('att-store').value;
   const date=document.getElementById('att-date').value;
   const sup=document.getElementById('att-supervisor').value;
   if(!date){toast(lang==='hi'?'तारीख चुनें':'Select date');return;}
+  _inflightForms['attendance']=true;
   document.getElementById('att-rows-wrap').style.display='none';
   document.getElementById('att-loading').style.display='block';
   const payload={type_:'attendance',store,date,supervisor:sup,attendance:JSON.stringify(attState),submittedAt:new Date().toISOString()};
-  await sendToSheets(payload);
+  var _attResult;
+  try{ _attResult = await submitAndVerify(payload); }
+  finally{ _inflightForms['attendance']=false; }
   try{ var _sup=sup||''; if(_sup) awardFormPoints(_sup,'Attendance',[{reason:(lang==='hi'?'Attendance मार्क':'Attendance marked'),pts:POINT_RULES.section_fill}]); }catch(e){}
   try{ awardAttendanceBehaviorPoints(); }catch(e){console.warn('behavior pts:',e);}
   document.getElementById('att-loading').style.display='none';
   document.getElementById('att-success').style.display='block';
-  document.getElementById('att-success-msg').textContent=`${store} — ${date}`;
+  document.getElementById('att-success-msg').innerHTML=`${store} — ${date}` + submitStatusLine(_attResult.status);
 }
 function attReset(){
   attState={};
@@ -2500,30 +2509,142 @@ function getDemoReports(){
   ];
 }
 // ══════════════════════════════════════════════════════
-// SHEETS SUBMISSION
+// SHEETS SUBMISSION — RELIABLE TRANSPORT (Phase 0)
+// duplicate guard + 3x retry with backoff + 20s timeout
+// + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-async function sendToSheets(payload){
-  try{
-    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){
-      await new Promise(function(r){setTimeout(r,1200);}); return null;
-    }
-    var form = new FormData();
-    Object.keys(payload).forEach(function(k){
-      var v = payload[k];
-      if(v === undefined || v === null) return;
-      try{
-        // Safely convert to string — handle all types
-        var str = (typeof v === 'object') ? JSON.stringify(v) : String(v);
-        form.append(k, str);
-      }catch(e){ form.append(k, ''); }
-    });
-    await fetch(SCRIPT_URL, {method:'POST', body:form, mode:'no-cors'});
-    return null;
-  }catch(e){
-    console.error('sendToSheets error:', e.name, e.message);
-    return null;
-  }
+var APP_VERSION = '7.0-phase0';
+var OUTBOX_KEY = 'be_outbox_v1';
+var _inflightForms = {};
+function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function outboxLoad(){ try{ return JSON.parse(localStorage.getItem(OUTBOX_KEY)||'[]'); }catch(e){ return []; } }
+function outboxSave(list){ try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(list)); }catch(e){ console.warn('outbox save failed:', e); } }
+function outboxAdd(payload){
+  var list = outboxLoad();
+  // Do not queue the same cid twice
+  var exists = false;
+  for(var i=0;i<list.length;i++){ if(list[i].cid===payload.cid){ exists=true; break; } }
+  if(!exists) list.push(payload);
+  // Cap total outbox at ~3.5MB so localStorage never overflows
+  try{ while(JSON.stringify(list).length > 3500000 && list.length > 1) list.shift(); }catch(e){}
+  outboxSave(list);
+  updateOutboxBadge();
 }
+function updateOutboxBadge(){
+  var n = outboxLoad().length;
+  var el = document.getElementById('outbox-badge');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'outbox-badge';
+    el.style.cssText = 'position:fixed;bottom:72px;right:12px;z-index:9999;background:#b45309;color:#fff;font-size:11px;font-weight:700;padding:7px 12px;border-radius:18px;box-shadow:0 2px 10px rgba(0,0,0,.3);display:none;cursor:pointer;font-family:inherit';
+    el.onclick = function(){ syncOutbox(true); };
+    if(document.body) document.body.appendChild(el);
+  }
+  if(n>0){ el.style.display='block'; el.textContent = (lang==='hi' ? '⏳ '+n+' बाकी — sync के लिए दबाएं' : '⏳ '+n+' pending — tap to sync'); }
+  else { el.style.display='none'; }
+}
+var _outboxSyncing = false;
+function syncOutbox(manual){
+  if(_outboxSyncing) return;
+  var list = outboxLoad();
+  if(list.length===0){ updateOutboxBadge(); return; }
+  if(navigator.onLine===false){ if(manual) toast(lang==='hi'?'📡 Offline — online होते ही sync होगा':'📡 Offline — will sync when back online'); return; }
+  _outboxSyncing = true;
+  var failures = 0;
+  function next(){
+    var cur = outboxLoad();
+    if(cur.length===0 || failures>=cur.length){
+      _outboxSyncing=false; updateOutboxBadge();
+      if(manual && cur.length===0) toast(lang==='hi'?'✅ सब sync हो गया':'✅ All synced');
+      return;
+    }
+    var item = cur[failures]; // skip past items that keep failing
+    postToScript(item, 20000).then(function(ok){
+      if(ok){
+        var latest = outboxLoad().filter(function(p){ return p.cid!==item.cid; });
+        outboxSave(latest); updateOutboxBadge();
+      } else { failures++; }
+      next();
+    });
+  }
+  next();
+}
+// One POST attempt with a hard timeout. no-cors: resolving = request reached the server.
+function postToScript(payload, timeoutMs){
+  return new Promise(function(resolve){
+    try{
+      if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){ setTimeout(function(){ resolve(true); }, 600); return; }
+      var form = new FormData();
+      Object.keys(payload).forEach(function(k){
+        var v = payload[k];
+        if(v === undefined || v === null) return;
+        try{ form.append(k, (typeof v === 'object') ? JSON.stringify(v) : String(v)); }
+        catch(e){ form.append(k, ''); }
+      });
+      var ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+      var timer = setTimeout(function(){ try{ if(ctrl) ctrl.abort(); }catch(e){} }, timeoutMs||20000);
+      fetch(SCRIPT_URL, {method:'POST', body:form, mode:'no-cors', signal: ctrl?ctrl.signal:undefined})
+        .then(function(){ clearTimeout(timer); resolve(true); })
+        .catch(function(err){ clearTimeout(timer); console.warn('postToScript failed:', err && err.name); resolve(false); });
+    }catch(e){ resolve(false); }
+  });
+}
+function postWithRetry(payload, attempts){
+  attempts = attempts || 3;
+  var delays = [0, 1500, 4000];
+  return new Promise(function(resolve){
+    var i = 0;
+    function tryOnce(){
+      postToScript(payload, 20000).then(function(ok){
+        if(ok){ resolve(true); return; }
+        i++;
+        if(i>=attempts){ resolve(false); return; }
+        setTimeout(tryOnce, delays[i]||4000);
+      });
+    }
+    tryOnce();
+  });
+}
+// Backwards-compatible: all existing callers `await sendToSheets(payload)`
+async function sendToSheets(payload){
+  if(!payload.cid) payload.cid = genCid();
+  var ok = await postWithRetry(payload, 3);
+  if(!ok){ outboxAdd(payload); return {ok:false, queued:true, cid:payload.cid}; }
+  return {ok:true, cid:payload.cid};
+}
+// Read-back verification: ask Apps Script doGet whether this cid actually landed.
+function verifySaved(cid, totalMs){
+  totalMs = totalMs || 15000;
+  var start = Date.now();
+  return new Promise(function(resolve){
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){ resolve(true); return; }
+    function poll(){
+      if(Date.now()-start > totalMs){ resolve(false); return; }
+      fetch(SCRIPT_URL+'?action=confirm&cid='+encodeURIComponent(cid)+'&_ts='+Date.now(), {method:'GET', redirect:'follow'})
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if(d && d.found){ resolve(true); } else { setTimeout(poll, 3000); } })
+        .catch(function(){ setTimeout(poll, 3000); });
+    }
+    setTimeout(poll, 2500);
+  });
+}
+// Full pipeline: send with retry → verify row landed → if not, queue (server dedupes by cid).
+async function submitAndVerify(payload){
+  var res = await sendToSheets(payload);
+  if(!res.ok) return {status:'queued', cid:res.cid};
+  var confirmed = await verifySaved(res.cid, 15000);
+  if(confirmed) return {status:'confirmed', cid:res.cid};
+  outboxAdd(payload);
+  return {status:'unconfirmed', cid:res.cid};
+}
+function submitStatusLine(status){
+  if(status==='confirmed') return '<div style="margin-top:8px;font-size:12px;font-weight:700;color:var(--green)">✅ '+(lang==='hi'?'Google Sheets में confirmed saved':'Confirmed saved to Google Sheets')+'</div>';
+  return '<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309">📥 '+(lang==='hi'?'Local save हुआ — sync हो रहा है… (auto-retry होगा)':'Saved locally, syncing… (will auto-retry)')+'</div>';
+}
+window.addEventListener('online', function(){ syncOutbox(false); });
+setInterval(function(){ syncOutbox(false); }, 90000);
+document.addEventListener('DOMContentLoaded', function(){ updateOutboxBadge(); setTimeout(function(){ syncOutbox(false); }, 4000); });
+console.log('BE Productivity App ' + APP_VERSION);
 // ── Re-compress image ────────────────────────────────────────────
 function recompressImage(base64, maxW, quality){
   return new Promise(resolve=>{
@@ -3695,53 +3816,138 @@ function compressImage(file, maxW, quality, cb){
   };
   reader.readAsDataURL(file);
 }
-async function submitCameraReport(){
-  const store   = document.getElementById('cam-store').value||'BC';
-  const by      = document.getElementById('cam-by').value||'—';
-  const today   = todayStr2();
-  const camData = loadCamData();
-  // Build photoData object — all base64 images
-  const photoData = {};
-  CAM_OPEN_CATS.forEach(cat=>{
-    const key=`${store}_${today}_open_${cat.k}`;
-    if(camData[key]?.thumb) photoData[cat.k]=camData[key].thumb;
-  });
-  CAM_CLOSE_CATS.forEach(cat=>{
-    const key=`${store}_${today}_close_${cat.k}`;
-    if(camData[key]?.thumb) photoData[cat.k]=camData[key].thumb;
-  });
-  // Build grooming data
-  const groomingData={};
-  TEAMS[store].forEach(nm=>{
-    const key=`${store}_${today}_groom_${nm}`;
-    if(camData[key]) groomingData[nm]=camData[key];
-  });
-  const openCount  = CAM_OPEN_CATS.filter(c=>camData[`${store}_${today}_open_${c.k}`]?.thumb).length;
-  const groomCount = TEAMS[store].filter(nm=>camData[`${store}_${today}_groom_${nm}`]?.thumb).length;
-  // Show uploading message
+// ── Camera submit helpers (Phase 0: real progress + never fake success) ──
+function camProgressShow(){
   document.getElementById('cam-success').style.display='block';
   document.getElementById('cam-success-msg').innerHTML =
-    `<span style="color:var(--gold)">⏳ ${lang==='hi'?'Google Drive पर upload हो रहा है... (30-60 sec)':'Uploading to Google Drive... (30-60 sec)'}</span>`;
-  const payload={
-    type_       : 'camera',
-    store, by,
-    date        : today,
-    photoData   : JSON.stringify(photoData),
-    groomingData: JSON.stringify(groomingData),
-    openingPhotos: openCount,
-    groomingDone : groomCount,
-    captureTime : new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),
-    submittedAt : new Date().toISOString()
-  };
-  await sendToSheets(payload);
-  try{ var _s=(document.getElementById('cam-supervisor')||document.getElementById('cam-store')||{}).value||''; var _who=(document.getElementById('cl-manager')||{}).value||_s; if(_who) awardFormPoints(_who,'Camera & Grooming',[{reason:(lang==='hi'?'Camera/Grooming':'Camera/Grooming'),pts:POINT_RULES.section_fill}]); }catch(e){}
-  document.getElementById('cam-success-msg').innerHTML =
-    `✅ ${store} — ${by} — ${today}<br>
-     <span style="font-size:12px;color:var(--green)">
-       ${lang==='hi'?`${openCount}/6 opening photos + ${groomCount} grooming photos Google Drive में save हुईं।`
-                    :`${openCount}/6 opening + ${groomCount} grooming photos saved to Google Drive.`}
-     </span><br>
-     <span style="font-size:11px;color:var(--light)">${lang==='hi'?'Google Sheet में Drive links देखें':'Check Google Sheet for Drive links'}</span>`;
+    '<div id="cam-prog-text" style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:8px">…</div>'
+    + '<div style="background:#eee;border-radius:8px;height:14px;overflow:hidden;max-width:320px;margin:0 auto">'
+    + '<div id="cam-prog-fill" style="height:100%;width:0%;background:var(--gold);border-radius:8px;transition:width .3s"></div></div>'
+    + '<div id="cam-prog-sub" style="font-size:11px;color:var(--mid);margin-top:6px"></div>';
+}
+function camProgressSet(done,total,label,sub){
+  var t=document.getElementById('cam-prog-text'); if(t) t.textContent=label;
+  var f=document.getElementById('cam-prog-fill'); if(f) f.style.width=(total>0?Math.round(done/total*100):0)+'%';
+  var s=document.getElementById('cam-prog-sub'); if(s) s.textContent=sub||'';
+}
+// Poll getPhotoLink until the Drive link exists (= real proof the photo landed) or timeout.
+function fetchPhotoLink(store,date,category,staffName,totalMs){
+  var start=Date.now();
+  return new Promise(function(resolve){
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){ resolve('demo'); return; }
+    function poll(){
+      if(Date.now()-start>totalMs){ resolve(''); return; }
+      var u=SCRIPT_URL+'?action=getPhotoLink&store='+encodeURIComponent(store)
+        +'&date='+encodeURIComponent(date)+'&category='+encodeURIComponent(category)
+        +'&staffName='+encodeURIComponent(staffName||'')+'&_ts='+Date.now();
+      fetch(u,{method:'GET',redirect:'follow'})
+        .then(function(r){return r.json();})
+        .then(function(d){ if(d&&d.url){ resolve(d.url); } else { setTimeout(poll,3000); } })
+        .catch(function(){ setTimeout(poll,3000); });
+    }
+    setTimeout(poll,2500);
+  });
+}
+async function submitCameraReport(){
+  if(_inflightForms['camera']) return;   // duplicate-submit guard
+  _inflightForms['camera']=true;
+  try{
+    var store   = document.getElementById('cam-store').value||'BC';
+    var by      = document.getElementById('cam-by').value||'—';
+    var today   = todayStr2();
+    var camData = loadCamData();
+    // Build job list: every captured photo. Already-on-Drive photos are just verified, not re-sent.
+    var jobs=[];
+    CAM_OPEN_CATS.forEach(function(cat){
+      var key=store+'_'+today+'_open_'+cat.k; var e=camData[key];
+      if(e&&e.thumb) jobs.push({key:key,kind:'photo',cat:cat.k,thumb:e.thumb,url:e.driveUrl||''});
+    });
+    CAM_CLOSE_CATS.forEach(function(cat){
+      var key=store+'_'+today+'_close_'+cat.k; var e=camData[key];
+      if(e&&e.thumb) jobs.push({key:key,kind:'photo',cat:cat.k,thumb:e.thumb,url:e.driveUrl||''});
+    });
+    var groomingMeta={};
+    TEAMS[store].forEach(function(nm){
+      var key=store+'_'+today+'_groom_'+nm; var g=camData[key];
+      if(!g) return;
+      groomingMeta[nm]={grade:g.grade||'',checks:g.checks||[],url:g.driveUrl||''};
+      if(g.thumb) jobs.push({key:key,kind:'groom',cat:'groom_'+nm,staff:nm,thumb:g.thumb,url:g.driveUrl||'',grade:g.grade||'',checks:g.checks||[]});
+    });
+    if(jobs.length===0 && Object.keys(groomingMeta).length===0){
+      toast(lang==='hi'?'पहले कम से कम एक फोटो लें':'Capture at least one photo first');
+      _inflightForms['camera']=false; return;
+    }
+    camProgressShow();
+    var total=jobs.length+1, done=0, uploadedOk=0, queuedCt=0, urls={};
+    for(var i=0;i<jobs.length;i++){
+      var j=jobs[i];
+      camProgressSet(done,total,
+        (lang==='hi'?'फोटो अपलोड हो रही है ':'Uploading photo ')+(i+1)+' / '+jobs.length+'…',
+        j.kind==='groom'?('👤 '+j.staff):('📷 '+j.cat));
+      var url=j.url;
+      if(!url){
+        // Not on Drive yet — upload now with retry + timeout
+        var p={type_:'photo_upload', cid:genCid(), photo:j.thumb, store:store, date:today,
+               category:j.cat, by:by, staffName:(j.kind==='groom'?j.staff:''),
+               captureTime:new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),
+               submittedAt:new Date().toISOString()};
+        if(j.kind==='groom'){ if(j.grade) p.groomGrade=j.grade; if(j.checks&&j.checks.length) p.groomChecks=JSON.stringify(j.checks); }
+        var posted=await postWithRetry(p,3);
+        if(posted){ url=await fetchPhotoLink(store,today,j.cat,p.staffName,12000); }
+        if(!url){ outboxAdd(p); queuedCt++; }   // offline / unconfirmed → queue (server dedupes by cid)
+        else{
+          // remember Drive link locally so we never re-upload
+          try{ var cd=loadCamData(); if(cd[j.key]){ cd[j.key].driveUrl=url; saveCamData(cd); } }catch(e){}
+        }
+      }
+      if(url){
+        uploadedOk++;
+        if(j.kind==='photo') urls[j.cat]=url;
+        else if(groomingMeta[j.staff]) groomingMeta[j.staff].url=url;
+      }
+      done++;
+      camProgressSet(done,total,
+        (lang==='hi'?'फोटो ':'Photo ')+(i+1)+' / '+jobs.length+' '+(url?'✓':(lang==='hi'?'— queue में':'— queued')),
+        '');
+    }
+    // Summary row — links only, no base64 re-upload
+    camProgressSet(done,total,(lang==='hi'?'रिपोर्ट सेव हो रही है…':'Saving report to Google Sheets…'),'');
+    var openCount=CAM_OPEN_CATS.filter(function(c){var e=camData[store+'_'+today+'_open_'+c.k];return e&&e.thumb;}).length;
+    var groomCount=TEAMS[store].filter(function(nm){var e=camData[store+'_'+today+'_groom_'+nm];return e&&e.thumb;}).length;
+    var payload={
+      type_:'camera', store:store, by:by, date:today,
+      photoData:'{}',
+      photoUrls:JSON.stringify(urls),
+      groomingData:JSON.stringify(groomingMeta),
+      openingPhotos:openCount, groomingDone:groomCount,
+      captureTime:new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),
+      submittedAt:new Date().toISOString()
+    };
+    var sum=await submitAndVerify(payload);
+    done++; camProgressSet(done,total,'','');
+    try{ var _s=(document.getElementById('cam-supervisor')||document.getElementById('cam-store')||{}).value||''; var _who=(document.getElementById('cl-manager')||{}).value||_s; if(_who) awardFormPoints(_who,'Camera & Grooming',[{reason:(lang==='hi'?'Camera/Grooming':'Camera/Grooming'),pts:POINT_RULES.section_fill}]); }catch(e){}
+    // HONEST final status — never fake success
+    var allGood=(queuedCt===0 && sum.status==='confirmed');
+    var lines='';
+    if(allGood){
+      lines='✅ '+store+' — '+by+' — '+today+'<br>'
+        +'<span style="font-size:12px;color:var(--green)">'
+        +(lang==='hi'?(uploadedOk+' photos Google Drive में confirmed • रिपोर्ट Sheet में confirmed saved')
+                     :(uploadedOk+' photos confirmed on Google Drive • report confirmed in Sheet'))
+        +'</span>';
+    } else {
+      lines='📥 '+store+' — '+by+' — '+today+'<br>'
+        +'<span style="font-size:12px;color:var(--green)">'+(lang==='hi'?uploadedOk+' photos Drive में confirmed':uploadedOk+' photos confirmed on Drive')+'</span><br>'
+        +(queuedCt>0?('<span style="font-size:12px;color:#b45309;font-weight:700">⏳ '+(lang==='hi'?queuedCt+' photos queue में — network आते ही auto-sync होंगी':queuedCt+' photos queued — will auto-sync when network returns')+'</span><br>'):'')
+        +(sum.status!=='confirmed'?('<span style="font-size:12px;color:#b45309;font-weight:700">📥 '+(lang==='hi'?'रिपोर्ट local saved — syncing…':'Report saved locally, syncing…')+'</span>'):'');
+    }
+    document.getElementById('cam-success-msg').innerHTML=lines;
+  }catch(err){
+    console.error('camera submit error:',err);
+    document.getElementById('cam-success-msg').innerHTML='<span style="color:#b91c1c;font-weight:700">⚠️ '+(lang==='hi'?'Upload में समस्या — फोटो local saved हैं, दोबारा Submit दबाएं':'Upload problem — photos are saved locally, tap Submit again')+'</span>';
+  }finally{
+    _inflightForms['camera']=false;
+  }
 }
 function camReset(){ document.getElementById('cam-success').style.display='none'; initCamera(); }
 async function openDriveFolder(){
