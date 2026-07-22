@@ -869,6 +869,23 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
       <div class="login-role-list" id="login-roles"></div>
       <button class="login-btn" id="login-confirm-btn" onclick="loginConfirm()" disabled>✓ Login करें</button>
     </div>
+    <!-- Step 3: PIN (Phase 2) -->
+    <div id="login-step-pin" style="display:none">
+      <button class="login-back" onclick="pinBackToRoles()">← वापस / Back</button>
+      <div class="login-step-title" id="pin-step-title">🔐 अपना PIN डालें</div>
+      <div class="login-step-sub" id="pin-step-sub">4 अंकों का PIN / Your 4-digit PIN</div>
+      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="login-pin-input"
+        style="width:160px;margin:10px auto;display:block;text-align:center;font-size:26px;letter-spacing:12px;padding:10px;border:2px solid var(--gold);border-radius:12px;outline:none;font-family:inherit"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="login-pin-input2" placeholder="फिर से / again"
+        style="width:160px;margin:0 auto 10px;display:none;text-align:center;font-size:20px;letter-spacing:10px;padding:8px;border:2px solid var(--border);border-radius:12px;outline:none;font-family:inherit"
+        oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+      <div id="login-pin-error" style="text-align:center;color:#c62828;font-size:12px;font-weight:700;min-height:18px"></div>
+      <button class="login-btn" id="login-pin-btn" onclick="pinSubmit()">✓ आगे बढ़ें / Continue</button>
+      <div style="text-align:center;margin-top:10px">
+        <a href="#" onclick="pinOwnerReset();return false" style="font-size:11px;color:var(--light)">PIN भूल गए? Owner reset</a>
+      </div>
+    </div>
   </div>
 </div>
 <!-- TOP BAR -->
@@ -1940,7 +1957,85 @@ function clSelectStore(s){
     }
     if(tick){ tick.style.display='block'; }
     console.log('Store selected:',s);
+    loadDayRecord();
   } catch(e){ console.error('clSelectStore error:',e); }
+}
+// ══ PHASE 2: SAME-DAY RECORD LINKING + EDIT MODE ═══════════════
+// If this store+type was already submitted today (this device OR any device),
+// prefill everything and switch to edit mode — never a fresh blank form.
+function claySnapKey(store,type){ return 'be_cl_snap_'+store+'_'+todayStr2()+'_'+type; }
+function saveDaySnapshot(){
+  try{
+    var snap={ checks:clState.checks, times:clState.times, repairs:clState.repairs,
+      figures:clState.figures, assignments:clState.assignments, staffTasks:clState.staffTasks||{},
+      priorities:clState.priorities, priAssign:clState.priAssign,
+      mgrNotes:clState.mgrNotes, rsNotes:clState.rsNotes,
+      manager:(document.getElementById('cl-manager')||{}).value||'',
+      time:(document.getElementById('cl-time')||{}).value||'',
+      savedAt:new Date().toISOString() };
+    localStorage.setItem(claySnapKey(clState.store,clState.type), JSON.stringify(snap));
+  }catch(e){}
+}
+function applyDayRecord(rec, from){
+  if(!rec) return;
+  // Only prefill if the user hasn't started ticking yet
+  if(Object.keys(clState.checks||{}).length>0 && !clState.editMode) return;
+  try{
+    clState.checks     = rec.checks     || clState.checks || {};
+    clState.times      = rec.times      || clState.times || {};
+    clState.repairs    = rec.repairs    || clState.repairs || {};
+    clState.figures    = rec.figures    || clState.figures || {};
+    clState.assignments= rec.assignments|| clState.assignments || {};
+    if(rec.staffTasks) clState.staffTasks = rec.staffTasks;
+    clState.priorities = rec.priorities || clState.priorities;
+    clState.priAssign  = rec.priAssign  || clState.priAssign;
+    clState.mgrNotes   = rec.mgrNotes   || clState.mgrNotes || '';
+    clState.rsNotes    = rec.rsNotes    || clState.rsNotes || '';
+    clState.editMode   = true;
+    clState.editInfo   = { by: rec.manager||'', at: (rec.savedAt||'').slice(11,16), from: from };
+    if(clState.step===2) buildClChecklist();
+    toast('📝 '+(lang==='hi'?'आज का '+(clState.type==='opening'?'उद्घाटन':'समापन')+' पहले से भरा है — Edit mode':'Today\'s '+clState.type+' already filled — edit mode'));
+  }catch(e){ console.warn('applyDayRecord:',e); }
+}
+function loadDayRecord(){
+  if(!clState.store || !clState.type) return;
+  clState.editMode=false; clState.editInfo=null;
+  var store=clState.store, type=clState.type, date=todayStr2();
+  // 1. Local snapshot (instant, same device)
+  var snap=null;
+  try{ snap=JSON.parse(localStorage.getItem(claySnapKey(store,type))||'null'); }catch(e){}
+  if(snap){ applyDayRecord(snap,'local'); return; }
+  // 2. Server (cross-device): fetch today's raw record
+  if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE') return;
+  fetch(SCRIPT_URL+'?action=getChecklist&store='+encodeURIComponent(store)+'&date='+date+'&type='+encodeURIComponent(type)+'&_ts='+Date.now(),{redirect:'follow'})
+    .then(function(r){return r.json();})
+    .then(function(j){
+      if(j && j.found && j.record && clState.store===store && clState.type===type){
+        var rec=j.record;
+        // Server record fields are JSON strings — parse them
+        ['checks','times','repairs','figures','assignments','staffTasks','priorities','priAssign'].forEach(function(k){
+          if(typeof rec[k]==='string'){ try{ rec[k]=JSON.parse(rec[k]); }catch(e){ delete rec[k]; } }
+        });
+        applyDayRecord(rec,'server');
+      }
+    }).catch(function(){});
+}
+function buildEditModeBanner(){
+  if(!clState.editMode) return '';
+  var info=clState.editInfo||{};
+  return '<div style="background:#fff8e1;border:2px solid var(--gold);border-radius:12px;padding:12px;margin-bottom:12px;font-size:12.5px;line-height:1.6">'
+    +'<b>📝 '+(lang==='hi'?'EDIT MODE — आज का यह फॉर्म पहले भरा जा चुका है':'EDIT MODE — already submitted today')+'</b>'
+    +(info.by?('<br>'+(lang==='hi'?'भरने वाला: ':'Filled by: ')+'<b>'+info.by+'</b>'+(info.at?' @ '+info.at:'')):'')
+    +'<br>'+(lang==='hi'?'जो सेक्शन बचे थे उन्हें टिक करें — जमा करने पर आज की एक ही रिकॉर्ड अपडेट होगी, नई नहीं बनेगी।':'Tick what was left — submitting UPDATES today\'s record, it will not create a duplicate.')
+    +'<br><button class="btn" style="margin-top:8px;font-size:11px;padding:6px 12px" onclick="clStartFresh()">🔄 '+(lang==='hi'?'खाली फॉर्म से शुरू करें':'Start with a blank form instead')+'</button>'
+    +'</div>';
+}
+function clStartFresh(){
+  clState.checks={}; clState.times={}; clState.repairs={}; clState.figures={};
+  clState.assignments={}; clState.priorities=['','','']; clState.priAssign=['','',''];
+  clState.mgrNotes=''; clState.rsNotes=''; clState.editMode=false; clState.editInfo=null;
+  buildClChecklist();
+  toast(lang==='hi'?'🔄 खाली फॉर्म':'🔄 Blank form');
 }
 function clSelectType(t){
   try{
@@ -1959,6 +2054,7 @@ function clSelectType(t){
     if(target){ target.classList.add('selected'); }
     if(tick)  { tick.style.display='block'; }
     console.log('Type selected:',t);
+    loadDayRecord();
   } catch(e){ console.error('clSelectType error:',e); }
 }
 function clGoStep(n){if(n>clState.step&&!clValidate(clState.step))return;clState.step=n;clRenderStep();}
@@ -2204,10 +2300,10 @@ function buildClChecklist(){
   html+=`<div class="sec-hdr blue hi">${lang==='hi'?'रणनीतिक समीक्षा (मालिक/ओनर)':'Strategic Review (Owner)'}</div><div class="sec-body"><div class="notes-wrap"><label>${lang==='hi'?'रणनीतिक अवलोकन / निर्देश':'Strategic Observations / Directives'}</label><textarea onchange="clState.rsNotes=this.value" placeholder="${lang==='hi'?'रणनीतिकार नोट्स...':'Strategist notes...'}">${clState.rsNotes}</textarea></div></div><div class="spacer"></div>`;
   // Sales-only staff get the simple salesman checklist; managers get full
   if(typeof isSalesOnly==='function' && isSalesOnly()){
-    document.getElementById('cl-checklist-body').innerHTML=buildSalesmanChecklist();
+    document.getElementById('cl-checklist-body').innerHTML=buildEditModeBanner()+buildSalesmanChecklist();
     return;
   }
-  html = buildMgrStaffToggle(st) + html;
+  html = buildEditModeBanner() + buildMgrStaffToggle(st) + html;
   document.getElementById('cl-checklist-body').innerHTML=html;
 }
 function buildClFigures(){
@@ -2267,10 +2363,13 @@ async function clSubmit(){
     checks:JSON.stringify(clState.checks),times:JSON.stringify(clState.times),repairs:JSON.stringify(clState.repairs),
     figures:JSON.stringify(clState.figures),assignments:JSON.stringify(clState.assignments),
     priorities:JSON.stringify(clState.priorities),priAssign:JSON.stringify(clState.priAssign),
-    mgrNotes:clState.mgrNotes,rsNotes:clState.rsNotes,submittedAt:new Date().toISOString()};
+    mgrNotes:clState.mgrNotes,rsNotes:clState.rsNotes,submittedAt:new Date().toISOString(),
+    isEdit:clState.editMode?'1':'0'};
   var _clResult;
   try{ _clResult = await submitAndVerify(payload); }
   finally{ _inflightForms['checklist']=false; }
+  // Phase 2: remember today's record so re-opening = edit mode, not a blank form
+  try{ saveDaySnapshot(); }catch(e){}
   document.getElementById('cl-loading').style.display='none';
   document.getElementById('cl-success').style.display='block';
   // Award points for filling checklist
@@ -2513,7 +2612,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.1-phase1';
+var APP_VERSION = '7.2-phase2';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -2608,6 +2707,15 @@ function postWithRetry(payload, attempts){
 // Backwards-compatible: all existing callers `await sendToSheets(payload)`
 async function sendToSheets(payload){
   if(!payload.cid) payload.cid = genCid();
+  // Phase 2: stamp every submission with who + device time (server adds server time)
+  try{
+    if(!payload.actor && typeof CURRENT_USER!=='undefined' && CURRENT_USER && CURRENT_USER.name){
+      payload.actor = CURRENT_USER.name;
+      payload.actorRole = (CURRENT_USER.roles||[]).join('/');
+      payload.pinVerified = CURRENT_USER.pinVerified ? '1' : '0';
+    }
+    if(!payload.deviceTime) payload.deviceTime = new Date().toISOString();
+  }catch(e){}
   var ok = await postWithRetry(payload, 3);
   if(!ok){ outboxAdd(payload); return {ok:false, queued:true, cid:payload.cid}; }
   return {ok:true, cid:payload.cid};
@@ -6136,15 +6244,136 @@ function loginBackToName(){
   document.getElementById('login-step-roles').style.display='none';
   document.getElementById('login-step-name').style.display='';
 }
+// ══ PHASE 2: PIN VERIFICATION ══════════════════════════════════
+var PIN_CACHE_KEY = 'be_pin_cache_v1';   // {name: verifiedHash} — offline fallback
+var _pinMode = 'enter';                  // 'enter' | 'create'
+function sha256Hex(str){
+  return new Promise(function(resolve){
+    try{
+      if(window.crypto && crypto.subtle && crypto.subtle.digest){
+        crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(function(buf){
+          var arr=Array.prototype.slice.call(new Uint8Array(buf));
+          resolve(arr.map(function(b){return ('0'+b.toString(16)).slice(-2);}).join(''));
+        }).catch(function(){ resolve('plain:'+str); });
+      } else { resolve('plain:'+str); }
+    }catch(e){ resolve('plain:'+str); }
+  });
+}
+function pinHash(name, pin){ return sha256Hex('BEPIN|'+name+'|'+pin); }
+function getPinCache(){ try{ return JSON.parse(localStorage.getItem(PIN_CACHE_KEY)||'{}'); }catch(e){ return {}; } }
 function loginConfirm(){
   if(!_loginSelName || _loginSelRoles.length===0) return;
+  // Go to PIN step; ask server whether this user already has a PIN
+  document.getElementById('login-step-roles').style.display='none';
+  document.getElementById('login-step-pin').style.display='';
+  document.getElementById('login-pin-error').textContent='';
+  document.getElementById('login-pin-input').value='';
+  document.getElementById('login-pin-input2').value='';
+  _pinMode='enter';
+  var title=document.getElementById('pin-step-title'), sub=document.getElementById('pin-step-sub');
+  title.textContent='🔐 '+_loginSelName+' — PIN';
+  sub.textContent=(lang==='hi'?'जांच हो रही है…':'Checking…');
+  var applied=false;
+  function setMode(mode){
+    if(applied) return; applied=true;
+    _pinMode=mode;
+    if(mode==='create'){
+      sub.textContent=(lang==='hi'?'पहली बार — अपना नया 4-अंक PIN बनाएं (दो बार डालें)':'First time — create your 4-digit PIN (enter twice)');
+      document.getElementById('login-pin-input2').style.display='block';
+    } else {
+      sub.textContent=(lang==='hi'?'अपना 4 अंकों का PIN डालें':'Enter your 4-digit PIN');
+      document.getElementById('login-pin-input2').style.display='none';
+    }
+    setTimeout(function(){ document.getElementById('login-pin-input').focus(); },150);
+  }
+  if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){ setMode('enter'); return; }
+  fetch(SCRIPT_URL+'?action=userinfo&name='+encodeURIComponent(_loginSelName)+'&_ts='+Date.now(),{redirect:'follow'})
+    .then(function(r){return r.json();})
+    .then(function(j){ setMode(j && j.hasPin ? 'enter' : 'create'); })
+    .catch(function(){
+      // Server unreachable — if we have a cached verified hash, ask to enter; else create
+      var cache=getPinCache();
+      setMode(cache[_loginSelName] ? 'enter' : 'create');
+    });
+  setTimeout(function(){ setMode('enter'); }, 8000); // never leave the user stuck
+}
+function pinBackToRoles(){
+  document.getElementById('login-step-pin').style.display='none';
+  document.getElementById('login-step-roles').style.display='';
+}
+function pinSubmit(){
+  var pin=document.getElementById('login-pin-input').value;
+  var err=document.getElementById('login-pin-error');
+  if(!/^[0-9]{4}$/.test(pin)){ err.textContent=(lang==='hi'?'4 अंक डालें':'Enter 4 digits'); return; }
+  var btn=document.getElementById('login-pin-btn'); btn.disabled=true;
+  err.textContent='';
+  pinHash(_loginSelName, pin).then(function(hash){
+    if(_pinMode==='create'){
+      var pin2=document.getElementById('login-pin-input2').value;
+      if(pin!==pin2){ err.textContent=(lang==='hi'?'दोनों PIN अलग हैं — फिर डालें':'PINs do not match'); btn.disabled=false; return; }
+      // Register PIN on server (server refuses if a PIN already exists)
+      sendToSheets({ type_:'set_pin', name:_loginSelName, newHash:hash,
+        role:_loginSelRoles.join('/'), store:_loginSelStore, submittedAt:new Date().toISOString() })
+      .then(function(){
+        var cache=getPinCache(); cache[_loginSelName]=hash;
+        localStorage.setItem(PIN_CACHE_KEY, JSON.stringify(cache));
+        btn.disabled=false;
+        finalizeLogin(true);
+      });
+      return;
+    }
+    // Verify against server
+    var verified=null;
+    var t=setTimeout(function(){ if(verified===null){ verified='offline'; settle(); } }, 10000);
+    function settle(){
+      btn.disabled=false;
+      var cache=getPinCache();
+      if(verified===true){
+        cache[_loginSelName]=hash; localStorage.setItem(PIN_CACHE_KEY, JSON.stringify(cache));
+        finalizeLogin(true);
+      } else if(verified===false){
+        err.textContent=(lang==='hi'?'❌ गलत PIN':'❌ Wrong PIN');
+        document.getElementById('login-pin-input').value='';
+      } else { // offline
+        if(cache[_loginSelName] && cache[_loginSelName]===hash){ finalizeLogin(false); }
+        else { err.textContent=(lang==='hi'?'📡 Server से संपर्क नहीं — बाद में कोशिश करें':'📡 Cannot reach server — try again'); }
+      }
+    }
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){ clearTimeout(t); verified=true; settle(); return; }
+    fetch(SCRIPT_URL+'?action=login&name='+encodeURIComponent(_loginSelName)+'&hash='+encodeURIComponent(hash)+'&_ts='+Date.now(),{redirect:'follow'})
+      .then(function(r){return r.json();})
+      .then(function(j){ clearTimeout(t); if(verified===null){ verified=(j&&j.ok===true)?true:(j&&j.ok===false)?false:'offline'; settle(); } })
+      .catch(function(){ clearTimeout(t); if(verified===null){ verified='offline'; settle(); } });
+  });
+}
+function pinOwnerReset(){
+  var op=prompt(lang==='hi'?'Owner PIN डालें:':'Enter Owner PIN:');
+  if(op===null) return;
+  if(op!==OWNER_PIN){ toast('❌ '+(lang==='hi'?'गलत Owner PIN':'Wrong Owner PIN')); return; }
+  sha256Hex('BEOWNER|'+op).then(function(ok){
+    sendToSheets({ type_:'set_pin', name:_loginSelName, newHash:'', ownerKey:ok, submittedAt:new Date().toISOString() })
+    .then(function(){
+      var cache=getPinCache(); delete cache[_loginSelName]; localStorage.setItem(PIN_CACHE_KEY, JSON.stringify(cache));
+      toast('✅ '+(lang==='hi'?_loginSelName+' का PIN reset हुआ — नया बनाएं':'PIN reset — create a new one'));
+      _pinMode='create';
+      document.getElementById('pin-step-sub').textContent=(lang==='hi'?'नया 4-अंक PIN बनाएं (दो बार डालें)':'Create a new 4-digit PIN (enter twice)');
+      document.getElementById('login-pin-input2').style.display='block';
+      document.getElementById('login-pin-input').value='';
+      document.getElementById('login-pin-input2').value='';
+    });
+  });
+}
+function finalizeLogin(pinVerified){
+  document.getElementById('login-step-pin').style.display='none';
   // Save user roles
   var users=getUsers();
   users[_loginSelName]={store:_loginSelStore, roles:_loginSelRoles.slice()};
   saveUsers(users);
-  // Set session
-  CURRENT_USER={name:_loginSelName, store:_loginSelStore, roles:_loginSelRoles.slice()};
+  // Set session (Phase 2: with verification stamp)
+  CURRENT_USER={name:_loginSelName, store:_loginSelStore, roles:_loginSelRoles.slice(),
+    pinVerified:!!pinVerified, loginAt:new Date().toISOString()};
   localStorage.setItem(SESSION_KEY, JSON.stringify(CURRENT_USER));
+  if(!pinVerified) toast('⚠️ '+(lang==='hi'?'Offline login — PIN server से verify नहीं हुआ':'Offline login — PIN not server-verified'));
   // Apply
   applyRoleVisibility();
   document.getElementById('login-overlay').classList.add('hidden');

@@ -40,7 +40,14 @@ const SH = {
   POINTS         : 'Points Log',
   // ── New in v5.1 (Phase 0) ──
   SUBMITLOG      : 'Submit Log',
+  // ── New in v5.3 (Phase 2) ──
+  USERS          : 'Users',
 };
+
+// Phase 2: owner reset key = SHA-256 of 'BEOWNER|<owner PIN>'.
+// Current owner PIN is '1234' (same as OWNER_PIN in index.html).
+// If you change the owner PIN in the app, recompute this hash.
+const OWNER_KEY_HASH = '025ff21695206546bf94bd9948b9b4472b927b09f94b2e679c2555fb11f26fb1';
 
 // ════════════════════════════════════════════════════════════════════
 // doPost — MAIN ENTRY POINT (receives all submissions)
@@ -82,19 +89,26 @@ function doPost(e) {
     // photo_upload is handled separately below and should NOT also hit logRecord/email
     if (type === 'photo_upload') {
       const url = handleSinglePhoto(d);
-      logCid(ss, cid, type);
+      logCid(ss, cid, type, d);
       return jsonResp({ status:'ok', url: url, timestamp: now });
     }
 
     // task_sync (Phase 1): background upsert — no All-Records log, no email
     if (type === 'task_sync') {
       handleTaskSync(ss, d, now);
-      logCid(ss, cid, type);
+      logCid(ss, cid, type, d);
       return jsonResp({ status:'ok', timestamp: now });
     }
 
+    // set_pin (Phase 2): create PIN (first time) or owner reset
+    if (type === 'set_pin') {
+      const result = handleSetPin(ss, d, now);
+      logCid(ss, cid, type, d);
+      return jsonResp(result);
+    }
+
     logRecord(ss, d, now);
-    logCid(ss, cid, type);
+    logCid(ss, cid, type, d);
     if (SEND_EMAIL_ALERTS) sendEmailAlert(d, type, now);
 
     return jsonResp({ status: 'ok', timestamp: now });
@@ -185,6 +199,24 @@ function doGet(e) {
       return getStateEndpoint(ss, safeParam(e,'date'), safeParam(e,'store'));
     }
 
+    // Phase 2: does this user exist / have a PIN? (never exposes the hash)
+    if (action === 'userinfo') {
+      const u = findUser(ss, safeParam(e,'name'));
+      return jsonResp({ status:'ok', exists: !!u, hasPin: !!(u && u.hash),
+                        role: u ? u.role : '', store: u ? u.store : '' });
+    }
+    // Phase 2: PIN login verification
+    if (action === 'login') {
+      const u = findUser(ss, safeParam(e,'name'));
+      const hash = safeParam(e,'hash');
+      if (!u || !u.hash) return jsonResp({ status:'ok', ok:false, reason:'no_pin' });
+      return jsonResp({ status:'ok', ok: (u.hash === hash) });
+    }
+    // Phase 2: today's checklist record for same-day edit prefill (cross-device)
+    if (action === 'getChecklist') {
+      return getChecklistRecord(ss, safeParam(e,'store'), safeParam(e,'date'), safeParam(e,'type'));
+    }
+
     // Phase 0: read-back verification — did submission <cid> actually land?
     if (action === 'confirm') {
       const cid = safeParam(e,'cid');
@@ -234,7 +266,7 @@ function doGet(e) {
     }
 
     return ContentService.createTextOutput(
-      'Bhartia Enterprises API v5.1 — Running — ' + nowIST()
+      'Bhartia Enterprises API v5.3 — Running — ' + nowIST()
     ).setMimeType(ContentService.MimeType.TEXT);
 
   } catch(err) {
@@ -287,7 +319,15 @@ function handleChecklist(ss, d, now) {
     ]);
     styleHeader(clSheet);
   }
-  appendRow(clSheet, [
+  // Phase 2: raw payload stored alongside so the app can prefill same-day edits
+  const rawJson = JSON.stringify({
+    checks:d.checks||'', times:d.times||'', repairs:d.repairs||'', figures:d.figures||'',
+    assignments:d.assignments||'', staffTasks:d.staffTasks||'', priorities:d.priorities||'',
+    priAssign:d.priAssign||'', mgrNotes:d.mgrNotes||'', rsNotes:d.rsNotes||'',
+    manager:d.manager||'', role:d.role||'', time:d.time||'', supervisor:d.supervisor||'',
+    filledBy:d.filledBy||'', savedAt:d.submittedAt||now
+  });
+  const mainRow = [
     now, d.store||'', sheetType, d.manager||'', d.role||'', d.date||'', d.time||'',
     d.supervisor||'', d.filledBy||'', checkedCount,
     checks['infra_prayer']||checks['open_prayer']  ? 'Yes':'No',
@@ -315,8 +355,24 @@ function handleChecklist(ss, d, now) {
     priors[1]||'', priAsgn[1]||'',
     priors[2]||'', priAsgn[2]||'',
     figs.sme_followup||'', figs.billing_followup||'',
-    d.mgrNotes||'', d.rsNotes||'', d.submittedAt||now
-  ]);
+    d.mgrNotes||'', d.rsNotes||'', d.submittedAt||now,
+    rawJson
+  ];
+  // Phase 2: SAME-DAY UPSERT — one row per store+type+date. A re-submit
+  // (edit mode) updates today's row instead of creating a duplicate.
+  ensureHeaderCell(clSheet, mainRow.length, 'Raw JSON');
+  let existingMain = -1;
+  {
+    const clData = clSheet.getDataRange().getValues();
+    for (let i = clData.length-1; i >= 1; i--) {
+      if (String(clData[i][1]) === (d.store||'') &&
+          String(clData[i][2]).toLowerCase() === sheetType.toLowerCase() &&
+          dstr(clData[i][5]) === dstr(d.date||'')) { existingMain = i+1; break; }
+    }
+  }
+  if (existingMain > 0) sheet_setRow(clSheet, existingMain, mainRow);
+  else appendRow(clSheet, mainRow);
+  const isResubmit = (existingMain > 0);
 
   // ── 2. STAFF ASSIGNMENT SHEET ───────────────────────────────────
   const aSheet = getSheet(ss, SH.STAFF_ASSIGN);
@@ -330,6 +386,11 @@ function handleChecklist(ss, d, now) {
       'Total Tasks','Done Count','Pending Count'
     ]);
     styleHeader(aSheet);
+  }
+  if (isResubmit) {
+    deleteRowsWhere(aSheet, r =>
+      String(r[1])===(d.store||'') && String(r[2]).toLowerCase()===sheetType.toLowerCase() &&
+      dstr(r[4])===dstr(d.date||''));
   }
   Object.entries(staffT).forEach(([name, tasks]) => {
     if (!Array.isArray(tasks) || tasks.length===0) return;
@@ -469,6 +530,9 @@ function handleChecklist(ss, d, now) {
       ]);
       styleHeader(vSheet);
     }
+    if (isResubmit) {
+      deleteRowsWhere(vSheet, r => dstr(r[0])===dstr(d.date||'') && String(r[1])===(d.store||''));
+    }
     const bills = parseFloat(figs.bills||0);
     const sales = parseFloat(figs.total_sales||0);
     const items = parseFloat(figs.items||0);
@@ -506,6 +570,8 @@ function handleAttendance(ss, d, now) {
   }
   let att = {};
   try { att = JSON.parse(d.attendance||'{}'); } catch(e){}
+  // Phase 2: same-day re-submit REPLACES today's attendance rows (no duplicates)
+  deleteRowsWhere(sheet, r => String(r[1])===(d.store||'') && dstr(r[2])===dstr(d.date||''));
   Object.entries(att).forEach(([key,val]) => {
     const name = key.replace('att_','');
     let workHrs = '';
@@ -549,6 +615,7 @@ function handleAttendance(ss, d, now) {
     else if(v.status==='halfday')hd++;
   });
   const total=Object.keys(att).length;
+  deleteRowsWhere(sumSheet, r => String(r[1])===(d.store||'') && dstr(r[2])===dstr(d.date||''));
   appendRow(sumSheet,[
     now,d.store||'',d.date||'',d.supervisor||'',
     total,pr,ab,lt,hd,'','',d.submittedAt||now
@@ -1329,6 +1396,82 @@ function getSheetData(ss, sheetName, store, dateOrMonth) {
 // UTILITY FUNCTIONS
 // ════════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════════
+// PHASE 2 — USERS / PIN LOGIN + SAME-DAY EDIT SUPPORT
+// ════════════════════════════════════════════════════════════════════
+const USER_HEADERS = ['Name','Role(s)','Store','WhatsApp Number','PIN Hash','Active','Created At','Updated At'];
+function getUsersSheet(ss) {
+  const sh = getSheet(ss, SH.USERS);
+  if (isEmpty(sh)) { appendRow(sh, USER_HEADERS); styleHeader(sh); }
+  return sh;
+}
+function findUser(ss, name) {
+  if (!name) return null;
+  const sh = ss.getSheetByName(SH.USERS);
+  if (!sh || sh.getLastRow() < 2) return null;
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === String(name).trim()) {
+      return { row: i+1, name: String(data[i][0]), role: String(data[i][1]||''),
+               store: String(data[i][2]||''), phone: String(data[i][3]||''),
+               hash: String(data[i][4]||''), active: String(data[i][5]||'') };
+    }
+  }
+  return null;
+}
+// set_pin rules:
+//  - valid ownerKey → set or clear any user's PIN (owner reset)
+//  - no ownerKey    → allowed ONLY if the user has no PIN yet (first-time self-enroll)
+function handleSetPin(ss, d, now) {
+  const name = String(d.name||'').trim();
+  if (!name) return { status:'error', message:'no name' };
+  const sheet = getUsersSheet(ss);
+  const u = findUser(ss, name);
+  const isOwner = d.ownerKey && d.ownerKey === OWNER_KEY_HASH;
+  if (u && u.hash && !isOwner) return { status:'error', message:'pin_exists' };
+  const newHash = String(d.newHash||'');
+  if (u) {
+    sheet.getRange(u.row, 5).setValue(newHash);
+    sheet.getRange(u.row, 8).setValue(now);
+    if (d.role  && !isOwner) sheet.getRange(u.row, 2).setValue(String(d.role));
+    if (d.store && !isOwner) sheet.getRange(u.row, 3).setValue(String(d.store));
+  } else {
+    appendRow(sheet, [name, String(d.role||''), String(d.store||''), '', newHash, 'Yes', now, now]);
+  }
+  return { status:'ok', ok:true };
+}
+// Same-day checklist record for cross-device edit prefill
+function getChecklistRecord(ss, store, date, type) {
+  try {
+    const sh = ss.getSheetByName(SH.CHECKLIST);
+    if (!sh || sh.getLastRow() < 2) return jsonResp({ status:'ok', found:false });
+    const header = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
+    const rawCol = header.indexOf('Raw JSON');
+    if (rawCol < 0) return jsonResp({ status:'ok', found:false });
+    const data = sh.getDataRange().getValues();
+    for (let i = data.length-1; i >= 1; i--) {
+      if (String(data[i][1]) === store &&
+          String(data[i][2]).toLowerCase() === String(type).toLowerCase() &&
+          dstr(data[i][5]) === date) {
+        const raw = String(data[i][rawCol]||'');
+        if (!raw) return jsonResp({ status:'ok', found:false });
+        return jsonResp({ status:'ok', found:true, record: JSON.parse(raw) });
+      }
+    }
+    return jsonResp({ status:'ok', found:false });
+  } catch(err) { return jsonResp({ status:'error', message: err.toString() }); }
+}
+// Delete rows (bottom-up) where predicate(rowValuesArray) is true
+function deleteRowsWhere(sheet, predicate) {
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  const data = sheet.getDataRange().getValues();
+  let n = 0;
+  for (let i = data.length-1; i >= 1; i--) {
+    if (predicate(data[i])) { sheet.deleteRow(i+1); n++; }
+  }
+  return n;
+}
+
+// ════════════════════════════════════════════════════════════════════
 // PHASE 1 — TASKS SYNC (upsert by Task ID) + STATE ENDPOINT
 // ════════════════════════════════════════════════════════════════════
 const TASK_HEADERS = [
@@ -1496,16 +1639,34 @@ function isDuplicateCid(cid) {
     return !!found;
   } catch(err) { return false; }
 }
-function logCid(ss, cid, type) {
+function logCid(ss, cid, type, d) {
   if (!cid) return;
   try {
     CacheService.getScriptCache().put('cid_' + cid, '1', 21600); // 6h fast-path
     const sh = getSheet(ss, SH.SUBMITLOG);
-    if (isEmpty(sh)) { appendRow(sh, ['Timestamp','CID','Type']); styleHeader(sh); }
-    appendRow(sh, [nowIST(), cid, type]);
+    if (isEmpty(sh)) {
+      appendRow(sh, ['Timestamp (Server)','CID','Type','Actor','Role','Device Time','PIN Verified']);
+      styleHeader(sh);
+    }
+    ensureHeaderCell(sh, 7, 'PIN Verified');  // upgrade Phase-0 3-column header
+    ensureHeaderCell(sh, 4, 'Actor'); ensureHeaderCell(sh, 5, 'Role'); ensureHeaderCell(sh, 6, 'Device Time');
+    d = d || {};
+    appendRow(sh, [nowIST(), cid, type,
+      String(d.actor||''), String(d.actorRole||''), String(d.deviceTime||''),
+      d.pinVerified==='1' ? 'Yes' : (d.actor ? 'No' : '')]);
     // Keep the log lean — trim oldest 500 once it passes 3000 rows
     if (sh.getLastRow() > 3000) sh.deleteRows(2, 500);
   } catch(err) { Logger.log('logCid error: ' + err); }
+}
+function ensureHeaderCell(sheet, colIndex, title) {
+  try {
+    if (sheet.getLastRow() < 1) return;
+    const cur = String(sheet.getRange(1, colIndex).getValue()||'');
+    if (cur === '') sheet.getRange(1, colIndex).setValue(title);
+  } catch(e){}
+}
+function sheet_setRow(sheet, rowIndex, rowValues) {
+  sheet.getRange(rowIndex, 1, 1, rowValues.length).setValues([rowValues]);
 }
 
 function nowIST() {
