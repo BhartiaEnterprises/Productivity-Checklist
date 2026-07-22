@@ -110,6 +110,7 @@ function doPost(e) {
     logRecord(ss, d, now);
     logCid(ss, cid, type, d);
     if (SEND_EMAIL_ALERTS) sendEmailAlert(d, type, now);
+    notifySubmissionEvent(ss, d, type, now);   // Phase 3: WhatsApp event notify (config-controlled)
 
     return jsonResp({ status: 'ok', timestamp: now });
 
@@ -266,7 +267,7 @@ function doGet(e) {
     }
 
     return ContentService.createTextOutput(
-      'Bhartia Enterprises API v5.3 — Running — ' + nowIST()
+      'Bhartia Enterprises API v5.4 — Running — ' + nowIST()
     ).setMimeType(ContentService.MimeType.TEXT);
 
   } catch(err) {
@@ -1532,14 +1533,20 @@ function getStateEndpoint(ss, date, storeFilter) {
   const cache = CacheService.getScriptCache();
   const hit = cache.get(cacheKey);
   if (hit) return jsonResp(JSON.parse(hit));
-
+  const state = buildState(ss, date, storeFilter);
+  const payload = { status:'ok', state: state };
+  try { cache.put(cacheKey, JSON.stringify(payload), 60); } catch(e){}
+  return jsonResp(payload);
+}
+// Shared by the state endpoint AND the WhatsApp cron (Phase 3)
+function buildState(ss, date, storeFilter) {
   const stores = storeFilter ? [storeFilter] : ['BC','VKS'];
   const state = { date: date, generatedAt: nowIST(), stores: {} };
   stores.forEach(s => {
     state.stores[s] = {
       opening:    { done:false, by:'', time:'' },
       closing:    { done:false, by:'', time:'' },
-      attendance: { done:false, staffMarked:0 },
+      attendance: { done:false, staffMarked:0, lunchMissing:0 },
       camera:     { done:false, photos:0 },
       productivity: { staffSubmitted: [] },
       tasks:      {}   // per person: {pending, doneToday}
@@ -1574,11 +1581,14 @@ function getStateEndpoint(ss, date, storeFilter) {
   const at = lastRows(SH.ATTENDANCE, 800);
   if (at.rows.length) {
     const aSt = col(at.header,'Store'), aDt = col(at.header,'Date');
+    const aSts = col(at.header,'Status'), aLO = col(at.header,'Lunch Out'), aLI = col(at.header,'Lunch In');
     at.rows.forEach(r => {
       const s = String(r[aSt]||'');
       if (!state.stores[s] || dstr(r[aDt]) !== date) return;
       state.stores[s].attendance.done = true;
       state.stores[s].attendance.staffMarked++;
+      if (String(r[aSts]||'')==='present' && (String(r[aLO]||'')==='' || String(r[aLI]||'')===''))
+        state.stores[s].attendance.lunchMissing++;
     });
   }
   // Camera
@@ -1604,6 +1614,7 @@ function getStateEndpoint(ss, date, storeFilter) {
         state.stores[s].productivity.staffSubmitted.push(nm);
     });
   }
+  // (getStateEndpoint continues in buildState — see wrapper above)
   // Tasks (new layout) — pending counts + done-today per assignee
   const tk = lastRows(SH.TASKS, 1000);
   if (tk.header[0] === 'Task ID' && tk.rows.length) {
@@ -1619,9 +1630,341 @@ function getStateEndpoint(ss, date, storeFilter) {
       });
     });
   }
-  const payload = { status:'ok', state: state };
-  try { cache.put(cacheKey, JSON.stringify(payload), 60); } catch(e){}
-  return jsonResp(payload);
+  return state;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// PHASE 3 — WHATSAPP AUTOMATION via BhashSMS (Meta WhatsApp Business API)
+// All sending goes through Meta-APPROVED templates. Config lives in the
+// 'Config' sheet so the owner can tune everything without code changes.
+// ════════════════════════════════════════════════════════════════════
+const SH_CONFIG = 'Config';
+const SH_WALOG  = 'WA Log';
+const CONFIG_DEFAULTS = [
+  ['WA_ENABLED',        'NO',        'YES to turn WhatsApp sending on (needs BHASH_PASS filled)'],
+  ['BHASH_USER',        'Bcollection','BhashSMS account user'],
+  ['BHASH_PASS',        '',          'BhashSMS account password — FILL THIS'],
+  ['BHASH_SENDER',      'BUZWAP',    'BhashSMS sender ID (maps to your WA business number)'],
+  ['MORNING_TIME',      '09:30',     'Daily morning reminder time (IST)'],
+  ['FOLLOWUP_MINS',     '60',        'Follow-up if still unfilled after this many minutes'],
+  ['ATT_NUDGE_TIME',    '11:30',     'Attendance-not-marked nudge time'],
+  ['LUNCH_NUDGE_TIME',  '15:30',     'Lunch in/out missing nudge time'],
+  ['ESCALATION_TIME',   '10:30',     'Next-day escalation check time'],
+  ['DIGEST_DAY',        'Sunday',    'Weekly digest day'],
+  ['DIGEST_TIME',       '20:00',     'Weekly digest time'],
+  ['QUIET_START',       '21:45',     'No WhatsApp after this time'],
+  ['QUIET_END',         '08:30',     'No WhatsApp before this time'],
+  ['EVENT_NOTIFY',      'YES',       'Notify owner on each submission'],
+  ['EVENT_NOTIFY_TYPES','checklist,attendance,camera','Which submission types notify the owner'],
+  ['TPL_MORNING',       'be_morning_reminder',  'Approved template: morning reminder'],
+  ['TPL_FOLLOWUP',      'be_followup_reminder', 'Approved template: 1-hour follow-up'],
+  ['TPL_ESCALATION',    'be_escalation_alert',  'Approved template: next-day escalation'],
+  ['TPL_ATTENDANCE',    'be_attendance_nudge',  'Approved template: attendance/lunch nudge'],
+  ['TPL_DIGEST',        'be_weekly_digest',     'Approved template: weekly summary'],
+  ['TPL_EVENT',         'be_event_notify',      'Approved template: submission notification'],
+];
+function ensureConfigSheet(ss) {
+  let sh = ss.getSheetByName(SH_CONFIG);
+  if (!sh) { sh = ss.insertSheet(SH_CONFIG); appendRow(sh, ['Key','Value','Notes']); styleHeader(sh); }
+  const have = {};
+  const data = sh.getDataRange().getValues();
+  for (let i=1;i<data.length;i++) have[String(data[i][0])] = true;
+  CONFIG_DEFAULTS.forEach(rw => { if (!have[rw[0]]) appendRow(sh, rw); });
+  return sh;
+}
+function getConfig(ss) {
+  const out = {};
+  CONFIG_DEFAULTS.forEach(rw => out[rw[0]] = rw[1]);
+  const sh = ss.getSheetByName(SH_CONFIG);
+  if (sh && sh.getLastRow() > 1) {
+    const data = sh.getDataRange().getValues();
+    for (let i=1;i<data.length;i++) {
+      const k = String(data[i][0]||'').trim();
+      if (k) out[k] = String(data[i][1]===undefined?'':data[i][1]).trim();
+    }
+  }
+  return out;
+}
+function hm(t){ const p=String(t||'0:0').split(':'); return parseInt(p[0]||'0',10)*60+parseInt(p[1]||'0',10); }
+function nowISTmins(){ const s=Utilities.formatDate(new Date(),'Asia/Kolkata','HH:mm'); return hm(s); }
+function todayIST(){ return Utilities.formatDate(new Date(),'Asia/Kolkata','yyyy-MM-dd'); }
+function yesterdayIST(){ return Utilities.formatDate(new Date(Date.now()-86400000),'Asia/Kolkata','yyyy-MM-dd'); }
+// Template params: BhashSMS splits on comma; Meta forbids newlines in params
+function waParam(s){ return String(s===undefined||s===null?'':s).replace(/[,\n\r]+/g,' • ').replace(/\s+/g,' ').trim().slice(0,300) || '-'; }
+function waPhone(p){ let x=String(p||'').replace(/[^0-9]/g,''); if(x.length===12 && x.indexOf('91')===0) x=x.slice(2); return x.length===10?x:''; }
+function sendWA(ss, cfg, phoneRaw, template, params, context) {
+  const phone = waPhone(phoneRaw);
+  const logSh = getSheet(ss, SH_WALOG);
+  if (isEmpty(logSh)) { appendRow(logSh,['Timestamp','To','Template','Params','Context','Result']); styleHeader(logSh); }
+  if (!phone) { appendRow(logSh,[nowIST(),String(phoneRaw),template,params.join(' | '),context,'SKIP: bad phone']); return false; }
+  if (cfg.WA_ENABLED !== 'YES' || !cfg.BHASH_PASS) {
+    appendRow(logSh,[nowIST(),phone,template,params.map(waParam).join(' | '),context,'SKIP: disabled or no BHASH_PASS']);
+    return false;
+  }
+  const url = 'http://bhashsms.com/api/sendmsg.php'
+    + '?user=' + encodeURIComponent(cfg.BHASH_USER)
+    + '&pass=' + encodeURIComponent(cfg.BHASH_PASS)
+    + '&sender=' + encodeURIComponent(cfg.BHASH_SENDER)
+    + '&phone=' + phone
+    + '&text=' + encodeURIComponent(template)
+    + '&priority=wa&stype=normal'
+    + (params && params.length ? '&Params=' + encodeURIComponent(params.map(waParam).join(',')) : '');
+  let result = '';
+  try { result = UrlFetchApp.fetch(url, {muteHttpExceptions:true, followRedirects:true}).getContentText().slice(0,120); }
+  catch(err) { result = 'ERROR: ' + err; }
+  appendRow(logSh,[nowIST(), phone, template, params.map(waParam).join(' | '), context, result]);
+  if (logSh.getLastRow() > 4000) logSh.deleteRows(2, 500);
+  return result.indexOf('ERROR') < 0;
+}
+// Once-per-day flags so nothing ever repeats or spams
+function onceFlag(key) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(key)) return false;
+  props.setProperty(key, '1');
+  return true;
+}
+function cleanOldFlags() {
+  const props = PropertiesService.getScriptProperties();
+  const keep1 = todayIST(), keep2 = yesterdayIST();
+  const all = props.getProperties();
+  Object.keys(all).forEach(k => {
+    if (k.indexOf('wa_') === 0 && k.indexOf(keep1) < 0 && k.indexOf(keep2) < 0) props.deleteProperty(k);
+  });
+}
+function getRoster(ss) {
+  const sh = ss.getSheetByName(SH.USERS);
+  const out = [];
+  if (!sh || sh.getLastRow() < 2) return out;
+  const data = sh.getDataRange().getValues();
+  for (let i=1;i<data.length;i++) {
+    if (String(data[i][5]||'Yes').toLowerCase() === 'no') continue;  // Active = No
+    out.push({ name:String(data[i][0]||'').trim(), role:String(data[i][1]||''),
+               store:String(data[i][2]||''), phone:String(data[i][3]||'') });
+  }
+  return out;
+}
+function rosterFind(roster, pred){ return roster.filter(pred); }
+function storeManagers(roster, store){ return roster.filter(u => u.phone && u.store===store && u.role.indexOf('Manager')>=0); }
+function ownerAndPC(roster){ return roster.filter(u => u.phone && (u.role.indexOf('Owner')>=0 || u.role.indexOf('PC')>=0)); }
+// What is still pending for one person right now
+function pendingItemsFor(u, st) {
+  const items = [];
+  const s = st.stores[u.store];
+  if (s && u.role.indexOf('Manager') >= 0) {
+    if (!s.opening.done)    items.push('Opening checklist');
+    if (!s.attendance.done) items.push('Attendance');
+    if (!s.camera.done)     items.push('Camera photos');
+  }
+  Object.keys(st.stores).forEach(sk => {
+    const t = st.stores[sk].tasks[u.name];
+    if (t && t.pending > 0 && items.indexOf(t.pending + ' pending tasks') < 0) items.push(t.pending + ' pending tasks');
+  });
+  return items;
+}
+// ── THE CRON — runs every 30 min via time-driven trigger ──────────
+function waCron() {
+  const ss  = SpreadsheetApp.getActiveSpreadsheet();
+  const cfg = getConfig(ss);
+  const mins = nowISTmins();
+  const today = todayIST();
+  if (onceFlag('wa_' + today + '_cleanup')) cleanOldFlags();
+  // Quiet hours
+  if (mins >= hm(cfg.QUIET_START) || mins < hm(cfg.QUIET_END)) return;
+  const roster = getRoster(ss);
+  if (!roster.length) return;
+  const st = buildState(ss, today, '');
+
+  // 3.1 MORNING reminder
+  if (mins >= hm(cfg.MORNING_TIME)) {
+    roster.forEach(u => {
+      if (!u.phone) return;
+      const items = pendingItemsFor(u, st);
+      if (!items.length) return;
+      if (mins < hm(cfg.MORNING_TIME) + parseInt(cfg.FOLLOWUP_MINS,10)) {
+        if (onceFlag('wa_' + today + '_morning_' + u.name))
+          sendWA(ss, cfg, u.phone, cfg.TPL_MORNING,
+            [u.name, u.store||'Store', items.join(' • '), cfg.MORNING_TIME], 'morning:'+u.name);
+      } else {
+        // 3.2 ONE-HOUR FOLLOW-UP — still pending after the window
+        if (onceFlag('wa_' + today + '_followup_' + u.name))
+          sendWA(ss, cfg, u.phone, cfg.TPL_FOLLOWUP,
+            [u.name, items.join(' • '), u.store||'Store'], 'followup:'+u.name);
+      }
+    });
+  }
+  // 3.4 ATTENDANCE nudge (managers + PC)
+  if (mins >= hm(cfg.ATT_NUDGE_TIME)) {
+    ['BC','VKS'].forEach(store => {
+      if (st.stores[store].attendance.done) return;
+      if (!onceFlag('wa_' + today + '_att_' + store)) return;
+      storeManagers(roster, store).concat(ownerAndPC(roster)).forEach(u =>
+        sendWA(ss, cfg, u.phone, cfg.TPL_ATTENDANCE,
+          [u.name, store, 'Attendance abhi tak mark nahi hui'], 'att:'+store));
+    });
+  }
+  // 3.4b LUNCH in/out nudge
+  if (mins >= hm(cfg.LUNCH_NUDGE_TIME)) {
+    ['BC','VKS'].forEach(store => {
+      const a = st.stores[store].attendance;
+      if (!a.done || a.lunchMissing === 0) return;
+      if (!onceFlag('wa_' + today + '_lunch_' + store)) return;
+      storeManagers(roster, store).forEach(u =>
+        sendWA(ss, cfg, u.phone, cfg.TPL_ATTENDANCE,
+          [u.name, store, a.lunchMissing + ' staff ka lunch in/out time missing hai'], 'lunch:'+store));
+    });
+  }
+  // 3.3 NEXT-DAY ESCALATION
+  if (mins >= hm(cfg.ESCALATION_TIME)) {
+    const yd = yesterdayIST();
+    const yst = buildState(ss, yd, '');
+    ['BC','VKS'].forEach(store => {
+      const s = yst.stores[store];
+      const missed = [];
+      if (!s.closing.done)    missed.push('Closing checklist');
+      if (!s.opening.done)    missed.push('Opening checklist');
+      if (!s.attendance.done) missed.push('Attendance');
+      if (!s.camera.done)     missed.push('Camera photos');
+      const taskPeople = Object.keys(s.tasks).filter(nm => s.tasks[nm].pending > 0);
+      if (taskPeople.length) missed.push('Pending tasks: ' + taskPeople.join(' '));
+      if (!missed.length) return;
+      if (!onceFlag('wa_' + today + '_esc_' + store)) return;
+      const who = storeManagers(roster, store).map(u=>u.name).join(' ') || 'Manager';
+      storeManagers(roster, store).concat(ownerAndPC(roster)).forEach(u =>
+        sendWA(ss, cfg, u.phone, cfg.TPL_ESCALATION,
+          [store, yd, missed.join(' • '), who], 'escalation:'+store));
+    });
+  }
+  // 3.5 WEEKLY DIGEST (owner + PC)
+  const dayName = Utilities.formatDate(new Date(),'Asia/Kolkata','EEEE');
+  if (dayName === cfg.DIGEST_DAY && mins >= hm(cfg.DIGEST_TIME)) {
+    if (onceFlag('wa_' + today + '_digest')) sendWeeklyDigest(ss, cfg, roster);
+  }
+}
+function sendWeeklyDigest(ss, cfg, roster) {
+  const end = new Date(), start = new Date(Date.now() - 6*86400000);
+  const range = Utilities.formatDate(start,'Asia/Kolkata','d MMM') + ' - ' + Utilities.formatDate(end,'Asia/Kolkata','d MMM');
+  const from = Utilities.formatDate(start,'Asia/Kolkata','yyyy-MM-dd');
+  // Store completion: closing days out of 7
+  const compl = [];
+  const cl = ss.getSheetByName(SH.CHECKLIST);
+  ['BC','VKS'].forEach(store => {
+    let days = 0;
+    if (cl && cl.getLastRow() > 1) {
+      const data = cl.getDataRange().getValues();
+      const seen = {};
+      for (let i=1;i<data.length;i++) {
+        if (String(data[i][1])===store && String(data[i][2]).toLowerCase()==='closing' && dstr(data[i][5])>=from) seen[dstr(data[i][5])]=1;
+      }
+      days = Object.keys(seen).length;
+    }
+    compl.push(store + ' closing ' + days + '/7 days');
+  });
+  // Tasks per person this week
+  const tstats = [];
+  const tk = ss.getSheetByName(SH.TASKS);
+  if (tk && tk.getLastRow() > 1 && String(tk.getRange(1,1).getValue())==='Task ID') {
+    const data = tk.getDataRange().getValues();
+    const per = {};
+    for (let i=1;i<data.length;i++) {
+      const who = String(data[i][2]||'')||'?', stt = String(data[i][7]||'');
+      if (stt==='deleted') continue;
+      if (!per[who]) per[who]={p:0,d:0};
+      if (stt==='pending') per[who].p++;
+      else if (stt==='done' && dstr(data[i][10])>=from) per[who].d++;
+    }
+    Object.keys(per).forEach(nm => { if(per[nm].p+per[nm].d>0) tstats.push(nm+' '+per[nm].d+'✓/'+per[nm].p+' pending'); });
+  }
+  // Attendance presence days
+  const astats = [];
+  const at = ss.getSheetByName(SH.ATTENDANCE);
+  if (at && at.getLastRow() > 1) {
+    const data = at.getDataRange().getValues();
+    const per = {};
+    for (let i=1;i<data.length;i++) {
+      if (dstr(data[i][2]) < from) continue;
+      const nm = String(data[i][5]||''); if(!nm) continue;
+      if (!per[nm]) per[nm]=0;
+      if (String(data[i][6])==='present'||String(data[i][6])==='late') per[nm]++;
+    }
+    Object.keys(per).forEach(nm => astats.push(nm+' '+per[nm]+'d'));
+  }
+  // Points this week
+  const pstats = [];
+  const pt = ss.getSheetByName(SH.POINTS);
+  if (pt && pt.getLastRow() > 1) {
+    const data = pt.getDataRange().getValues();
+    const per = {};
+    for (let i=1;i<data.length;i++) {
+      if (dstr(data[i][5]) < from) continue;
+      const nm = String(data[i][1]||''); if(!nm) continue;
+      per[nm] = (per[nm]||0) + (parseFloat(data[i][3])||0);
+    }
+    Object.keys(per).sort((a,b)=>per[b]-per[a]).forEach(nm => pstats.push(nm+' '+Math.round(per[nm])+'pts'));
+  }
+  ownerAndPC(roster).forEach(u =>
+    sendWA(ss, cfg, u.phone, cfg.TPL_DIGEST,
+      [range, compl.join(' • ')||'-', tstats.join(' • ')||'-', astats.join(' • ')||'-', pstats.join(' • ')||'-'],
+      'digest'));
+}
+// 3.6 EVENT NOTIFICATION — called from doPost on each submission
+function notifySubmissionEvent(ss, d, type, now) {
+  try {
+    const cfg = getConfig(ss);
+    if (cfg.EVENT_NOTIFY !== 'YES') return;
+    if ((','+cfg.EVENT_NOTIFY_TYPES+',').indexOf(','+type+',') < 0) return;
+    const mins = nowISTmins();
+    if (mins >= hm(cfg.QUIET_START) || mins < hm(cfg.QUIET_END)) return;
+    const roster = getRoster(ss);
+    let label = type;
+    if (type==='checklist') label = (String(d.sheetType||'').toLowerCase()==='closing'?'Closing':'Opening') + ' checklist' + (d.isEdit==='1'?' (edited)':'');
+    if (type==='attendance') label = 'Attendance';
+    if (type==='camera') label = 'Camera report';
+    const by = String(d.actor||d.manager||d.by||d.supervisor||'-');
+    const time = Utilities.formatDate(new Date(),'Asia/Kolkata','HH:mm');
+    const detail = type==='checklist' ? ('Items ticked: '+String((()=>{try{return Object.values(JSON.parse(d.checks||'{}')).filter(v=>v===true||(Array.isArray(v)&&v.length>0)).length;}catch(e){return '-';}})())) : '-';
+    // one event notification per cid — doPost cid dedupe already prevents repeats
+    ownerAndPC(roster).forEach(u =>
+      sendWA(ss, cfg, u.phone, cfg.TPL_EVENT, [label, String(d.store||'-'), by, time, detail], 'event:'+type));
+  } catch(err) { Logger.log('notify error: '+err); }
+}
+// ── SETUP — run once from the editor ──────────────────────────────
+function setupTriggers() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'waCron') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('waCron').timeBased().everyMinutes(30).create();
+}
+const SEED_USERS = [
+  // name, role(s), store, phone (91 + 10 digits)
+  ['Sikander',     'Manager/Billing Exec/Inventory', 'BC',  '919835960720'],
+  ['Bijay',        'Social Media Exec/Billing Exec/Sales/Inventory', 'BC', '917488994224'],
+  ['Kundan',       'Manager/Social Media Exec/Sales/CRM/BDA', 'VKS', '918540037611'],
+  ['Ramu',         'Sales', 'BC',  '916202106164'],
+  ['Abhishek',     'Inventory/Billing Exec/Accountant', 'HO', '918851754064'],
+  ['Aakash',       'Sales/Telecaller', 'VKS', '918709232304'],
+  ['Akbar',        'Sales/BDA', 'VKS', '918581051360'],
+  ['Krishna',      'Sales/Inventory', 'BC', '916207785343'],
+  ['Kesri',        'Sales', 'BC',  ''],
+  ['Sunaina',      'Telecaller', 'HO', ''],
+  ['PC HO',        'PC', 'HO', ''],
+  ['Neel (Owner)', 'Owner', 'HO', '917004149616'],
+];
+function seedPhase3() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureConfigSheet(ss);
+  const sheet = getUsersSheet(ss);
+  SEED_USERS.forEach(su => {
+    const u = findUser(ss, su[0]);
+    if (u) {
+      if (!u.role  && su[1]) sheet.getRange(u.row, 2).setValue(su[1]);
+      if (!u.store && su[2]) sheet.getRange(u.row, 3).setValue(su[2]);
+      if (!u.phone && su[3]) sheet.getRange(u.row, 4).setValue(su[3]);
+    } else {
+      appendRow(sheet, [su[0], su[1], su[2], su[3], '', 'Yes', nowIST(), nowIST()]);
+    }
+  });
+  setupTriggers();
+  return 'Phase 3 seeded: Config sheet + Users + waCron trigger (every 30 min)';
 }
 
 // ════════════════════════════════════════════════════════════════════
