@@ -267,7 +267,7 @@ function doGet(e) {
     }
 
     return ContentService.createTextOutput(
-      'Bhartia Enterprises API v5.4 — Running — ' + nowIST()
+      'Bhartia Enterprises API v5.5 — Running — ' + nowIST()
     ).setMimeType(ContentService.MimeType.TEXT);
 
   } catch(err) {
@@ -1477,7 +1477,9 @@ function deleteRowsWhere(sheet, predicate) {
 // ════════════════════════════════════════════════════════════════════
 const TASK_HEADERS = [
   'Task ID','Store','Assigned To','Added By','Section / Source','Task',
-  'Priority','Status','Due','Created Date','Done At','Carried?','Carried From','Updated At'
+  'Priority','Status','Due','Created Date','Done At','Carried?','Carried From','Updated At',
+  // Phase 4: type/status taxonomy, recurrence engine, per-occurrence completion, audit history
+  'Type','Recurrence JSON','Done Dates JSON','History JSON'
 ];
 function getTasksSheet(ss) {
   let sh = ss.getSheetByName(SH.TASKS);
@@ -1489,6 +1491,16 @@ function getTasksSheet(ss) {
   }
   if (!sh) sh = ss.getSheetByName(SH.TASKS) || ss.insertSheet(SH.TASKS);
   if (sh.getLastRow() === 0) { appendRow(sh, TASK_HEADERS); styleHeader(sh); }
+  else {
+    // Phase 4: extend an existing (pre-Phase-4) Tasks sheet with the new trailing columns in place —
+    // existing rows/columns are untouched, so nothing already synced is disturbed.
+    const lastCol = sh.getLastColumn();
+    if (lastCol < TASK_HEADERS.length) {
+      const missing = TASK_HEADERS.slice(lastCol);
+      sh.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+      try { styleHeader(sh); } catch(e){}
+    }
+  }
   return sh;
 }
 function handleTaskSync(ss, d, now) {
@@ -1505,7 +1517,9 @@ function handleTaskSync(ss, d, now) {
       String(t.id), t.store||'', t.assignedTo||'', t.addedBy||'',
       t.source||'', t.desc||'', t.priority||'normal', t.status||'pending',
       t.due||'', t.date||'', t.doneAt||'', t.carried?'Yes':'No',
-      t.carriedFrom||'', now
+      t.carriedFrom||'', now,
+      t.type||'', JSON.stringify(t.recurrence||null),
+      JSON.stringify(t.doneDates||[]), JSON.stringify(t.history||[])
     ];
     const r = idRow[String(t.id)];
     if (r) sheet.getRange(r, 1, 1, row.length).setValues([row]);

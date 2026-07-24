@@ -1388,6 +1388,49 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
         </select>
       </div>
     </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="field">
+        <label class="hi" data-hi="प्रकार" data-en="Type">प्रकार</label>
+        <select id="task-type-input" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+          <option value="operational" selected>⚙️ Operational</option>
+          <option value="training">🎓 Training</option>
+          <option value="inventory">📦 Inventory</option>
+          <option value="admin">🗂️ Admin</option>
+          <option value="followup">🔁 Follow-up</option>
+          <option value="other">📌 Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="hi" data-hi="दोहराव" data-en="Repeat">दोहराव</label>
+        <select id="task-recur-input" onchange="onRecurModeChange()" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
+          <option value="">एक बार / Once</option>
+          <option value="daily">🔁 रोज़ / Daily</option>
+          <option value="daily_till">🔁 रोज़, तारीख तक / Daily till date</option>
+          <option value="weekly">🔁 साप्ताहिक / Weekly</option>
+          <option value="monthly">🔁 मासिक / Monthly</option>
+        </select>
+      </div>
+    </div>
+    <div id="recur-until-row" class="field" style="margin-bottom:10px;display:none">
+      <label class="hi" data-hi="तारीख तक दोहराएं" data-en="Repeat until">तारीख तक दोहराएं</label>
+      <input type="date" id="task-recur-until" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+    </div>
+    <div id="recur-weekly-row" class="field" style="margin-bottom:10px;display:none">
+      <label class="hi" data-hi="किन दिनों?" data-en="Which days?">किन दिनों?</label>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <label style="font-size:11px"><input type="checkbox" class="recur-day-cb" value="1">Mon</label>
+        <label style="font-size:11px"><input type="checkbox" class="recur-day-cb" value="2">Tue</label>
+        <label style="font-size:11px"><input type="checkbox" class="recur-day-cb" value="3">Wed</label>
+        <label style="font-size:11px"><input type="checkbox" class="recur-day-cb" value="4">Thu</label>
+        <label style="font-size:11px"><input type="checkbox" class="recur-day-cb" value="5">Fri</label>
+        <label style="font-size:11px"><input type="checkbox" class="recur-day-cb" value="6">Sat</label>
+        <label style="font-size:11px"><input type="checkbox" class="recur-day-cb" value="0">Sun</label>
+      </div>
+    </div>
+    <div id="recur-monthly-row" class="field" style="margin-bottom:10px;display:none">
+      <label class="hi" data-hi="महीने की किस तारीख को?" data-en="Which day of month?">महीने की किस तारीख को?</label>
+      <input type="number" id="task-recur-day" min="1" max="31" value="1" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%">
+    </div>
     <div class="field" style="margin-bottom:14px">
       <label class="hi" data-hi="जोड़ने वाला (आपका नाम)" data-en="Added By (your name)">जोड़ने वाला (आपका नाम)</label>
       <select id="task-addedby-input" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
@@ -2612,7 +2655,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.2-phase2';
+var APP_VERSION = '7.3-phase4a';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -3000,7 +3043,8 @@ function doTaskSync(){
     // Sync everything pending + anything touched in the last 14 days
     var tasks = loadTasks().filter(function(t){
       if(!t || !t.id || !t.desc) return false;
-      if(t.status==='pending') return true;
+      if(t.recurrence) return true; // recurring templates always sync — their state lives in doneDates, not status
+      if(isOpenStatus(t.status)) return true;
       if(t.date && String(t.date) >= cutoff) return true;
       if(t.doneAt && String(t.doneAt).slice(0,10) >= cutoff) return true;
       return false;
@@ -3036,14 +3080,98 @@ function todayStr2(){
   var ist=new Date(d.getTime()+(330+d.getTimezoneOffset())*60000);
   return ist.getFullYear()+'-'+String(ist.getMonth()+1).padStart(2,'0')+'-'+String(ist.getDate()).padStart(2,'0');
 }
+// ══ PHASE 4: RECURRENCE ENGINE ══════════════════════════════════════════
+// t.recurrence === null/undefined  → plain one-off task (unchanged legacy behavior)
+// t.recurrence === {mode:'daily'}                          — every day, forever
+//              or {mode:'daily_till', until:'YYYY-MM-DD'}   — every day through a set date
+//              or {mode:'weekly', days:[0..6]}              — specific weekdays (0=Sun..6=Sat)
+//              or {mode:'monthly', day:1-31}                — same date every month
+// t.doneDates = ['YYYY-MM-DD', ...] tracks which occurrences of a recurring task are done —
+// completing "today's" occurrence never marks tomorrow's as done.
+function isOpenStatus(s){ return s!=='done' && s!=='cancelled'; }
+function taskTypeLabel(t){
+  var m={operational:(lang==='hi'?'⚙️ ऑपरेशनल':'⚙️ Operational'), training:(lang==='hi'?'🎓 ट्रेनिंग':'🎓 Training'),
+    inventory:(lang==='hi'?'📦 इन्वेंटरी':'📦 Inventory'), admin:(lang==='hi'?'🗂️ एडमिन':'🗂️ Admin'),
+    followup:(lang==='hi'?'🔁 फॉलो-अप':'🔁 Follow-up'), other:(lang==='hi'?'📌 अन्य':'📌 Other')};
+  return m[t.type] || '';
+}
+function recurrenceLabel(r){
+  if(!r) return '';
+  if(r.mode==='daily') return '🔁 '+(lang==='hi'?'रोज़':'Daily');
+  if(r.mode==='daily_till') return '🔁 '+(lang==='hi'?'रोज़, तारीख तक ':'Daily till ')+(r.until||'—');
+  if(r.mode==='weekly'){
+    var names=lang==='hi'?['र','सो','मं','बु','गु','शु','श'] : ['Su','Mo','Tu','We','Th','Fr','Sa'];
+    return '🔁 '+(lang==='hi'?'साप्ताहिक':'Weekly')+' ('+(r.days||[]).map(function(d){return names[d];}).join(',')+')';
+  }
+  if(r.mode==='monthly') return '🔁 '+(lang==='hi'?'मासिक, तारीख ':'Monthly, day ')+(r.day||1);
+  return '🔁 '+(lang==='hi'?'दोहराव':'Recurring');
+}
+function recurrenceMatchesDate(r, dateStr){
+  if(!r || !dateStr) return false;
+  var d = new Date(dateStr+'T00:00:00');
+  if(r.mode==='daily') return true;
+  if(r.mode==='daily_till') return !r.until || dateStr <= r.until;
+  if(r.mode==='weekly') return (r.days||[]).indexOf(d.getDay())>=0;
+  if(r.mode==='monthly') return d.getDate()===(r.day||1);
+  return false;
+}
+// Every date from the task's start date through today that matches the recurrence rule
+// and is NOT already in doneDates — i.e. still-open occurrences (today's + any missed ones).
+// Capped to a 30-day lookback so a recurring task from months ago can't explode the list.
+function recurringOpenDates(t, today){
+  var out=[];
+  if(!t || !t.recurrence) return out;
+  var start = t.date || today;
+  var d = new Date(start+'T00:00:00');
+  var end = new Date(today+'T00:00:00');
+  var lookbackStart = new Date(end.getTime()-29*86400000);
+  if(d < lookbackStart) d = lookbackStart;
+  var doneSet = {}; (t.doneDates||[]).forEach(function(x){ doneSet[x]=true; });
+  var guard=0;
+  while(d <= end && guard<40){
+    var ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(recurrenceMatchesDate(t.recurrence, ds) && !doneSet[ds]) out.push(ds);
+    d.setDate(d.getDate()+1); guard++;
+  }
+  return out;
+}
+// Is this task (one-off or recurring) something that still needs doing today?
+function isTaskOpenToday(t, today){
+  today = today || todayStr2();
+  if(t.recurrence) return recurringOpenDates(t, today).length>0;
+  if(!isOpenStatus(t.status)) return false;
+  if(t.date===today) return true;
+  if(t.carried) return true;
+  if(t.due && t.due<=today) return true;
+  return false;
+}
+function addTaskHistory(t, action, detail){
+  t.history = (t.history||[]).slice();
+  t.history.push({at:new Date().toISOString(), by:(CURRENT_USER?CURRENT_USER.name:'—'), action:action, detail:detail||''});
+  return t.history;
+}
+function renderTaskHistory(id){
+  var t = loadTasks().filter(function(x){return x.id===id;})[0];
+  if(!t){ toast('Task not found'); return; }
+  var hist = t.history || [];
+  if(!hist.length){ toast(lang==='hi'?'कोई history नहीं':'No history yet'); return; }
+  var lines = hist.slice().reverse().map(function(h){
+    var when = new Date(h.at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    return when+' — '+h.by+' — '+h.action+(h.detail?(' ('+h.detail+')'):'');
+  });
+  alert((lang==='hi'?'📜 टास्क History:\n\n':'📜 Task History:\n\n')+lines.join('\n'));
+}
 // ── AUTO CARRY FORWARD (runs on app init + tasks tab open) ──
 function carryForwardTasks(){
   const today = todayStr2();
   let tasks = loadTasks();
   let changed = false;
   tasks = tasks.map(t => {
+    // Recurring tasks never "carry" — each day is its own occurrence, tracked via doneDates/
+    // recurringOpenDates() instead, so a missed occurrence just shows up as still-open, not duplicated.
+    if(t.recurrence) return t;
     // If task is pending and due date is in the past — mark as carried
-    if(t.status === 'pending' && t.date !== today && !t.carried){
+    if(isOpenStatus(t.status) && t.date !== today && !t.carried){
       t.carried = true;
       t.carriedFrom = t.date;
       t.date = today; // move to today
@@ -3080,20 +3208,24 @@ function populateOwnerMgrFilter(){
 function renderMyTasks(){
   const who = document.getElementById('task-whoami')?.value || '';
   const today = todayStr2();
-  let tasks = loadTasks().filter(t => {
+  const all = loadTasks();
+  // One-off tasks: same rule as before (created today, carried, or due on/before today, or done today)
+  let oneOff = all.filter(t => !t.recurrence).filter(t => {
     if(t.status==='done' && t.doneAt && t.doneAt.slice(0,10)===today) return true; // done today
-    if(t.status==='done') return false; // hide old done
-    // Pending: show if created today, carried, or due on/before today
+    if(!isOpenStatus(t.status)) return false; // hide old done/cancelled
     if(t.date===today) return true;
     if(t.carried) return true;
     if(t.due && t.due <= today) return true;
     return t.date===today;
   });
+  // Recurring tasks: still-open occurrence (today or missed), OR completed earlier today
+  let recurring = all.filter(t => t.recurrence && (recurringOpenDates(t, today).length>0 || (t.doneDates||[]).indexOf(today)>=0));
+  let tasks = oneOff.concat(recurring);
   // count for badges
-  const pending  = tasks.filter(t=>t.status==='pending').length;
-  const urgent   = tasks.filter(t=>t.status==='pending'&&t.priority==='urgent').length;
-  const done     = tasks.filter(t=>t.status==='done').length;
-  const carried  = tasks.filter(t=>t.carried&&t.status==='pending').length;
+  const pending  = tasks.filter(t=> t.recurrence ? recurringOpenDates(t,today).length>0 : isOpenStatus(t.status)).length;
+  const urgent   = tasks.filter(t=> t.priority==='urgent' && (t.recurrence ? recurringOpenDates(t,today).length>0 : isOpenStatus(t.status))).length;
+  const done     = tasks.filter(t=> t.recurrence ? (t.doneDates||[]).indexOf(today)>=0 : t.status==='done').length;
+  const carried  = tasks.filter(t=> t.recurrence ? recurringOpenDates(t,today).some(d=>d<today) : (t.carried&&isOpenStatus(t.status))).length;
   document.getElementById('ts-pending').textContent = pending;
   document.getElementById('ts-urgent').textContent  = urgent;
   document.getElementById('ts-done').textContent    = done;
@@ -3102,15 +3234,18 @@ function renderMyTasks(){
   // Filter by who
   if(who) tasks = tasks.filter(t => t.assignedTo===who || t.addedBy===who);
   // Filter by currentTaskFilter
-  if(currentTaskFilter==='urgent')  tasks = tasks.filter(t=>t.priority==='urgent'&&t.status==='pending');
-  if(currentTaskFilter==='pending') tasks = tasks.filter(t=>t.status==='pending');
-  if(currentTaskFilter==='done')    tasks = tasks.filter(t=>t.status==='done');
-  if(currentTaskFilter==='carried') tasks = tasks.filter(t=>t.carried&&t.status==='pending');
+  const openF = t => t.recurrence ? recurringOpenDates(t,today).length>0 : isOpenStatus(t.status);
+  const doneF = t => t.recurrence ? (t.doneDates||[]).indexOf(today)>=0 : t.status==='done';
+  if(currentTaskFilter==='urgent')  tasks = tasks.filter(t=>t.priority==='urgent'&&openF(t));
+  if(currentTaskFilter==='pending') tasks = tasks.filter(openF);
+  if(currentTaskFilter==='done')    tasks = tasks.filter(doneF);
+  if(currentTaskFilter==='carried') tasks = tasks.filter(t=> t.recurrence ? recurringOpenDates(t,today).some(d=>d<today) : (t.carried&&isOpenStatus(t.status)));
   // Sort: urgent first, then normal, then low, done last
   const priOrder = {urgent:0, normal:1, low:2};
   tasks.sort((a,b)=>{
-    if(a.status==='done' && b.status!=='done') return 1;
-    if(b.status==='done' && a.status!=='done') return -1;
+    const aDone=doneF(a), bDone=doneF(b);
+    if(aDone && !bDone) return 1;
+    if(bDone && !aDone) return -1;
     return (priOrder[a.priority]||1)-(priOrder[b.priority]||1);
   });
   const el = document.getElementById('my-task-list');
@@ -3126,13 +3261,15 @@ function renderOwnerTasks(){
   const storeF = ownerStoreFilter;
   const mgrF   = document.getElementById('owner-mgr-filter')?.value || '';
   const today  = todayStr2();
-  let tasks    = loadTasks().filter(t => t.date===today || t.carried);
+  let tasks    = loadTasks().filter(t => t.recurrence ? recurringOpenDates(t,today).length>0 || (t.doneDates||[]).indexOf(today)>=0 : (t.date===today || t.carried));
   if(storeF !== 'ALL') tasks = tasks.filter(t => t.store===storeF);
   if(mgrF)             tasks = tasks.filter(t => t.addedBy===mgrF);
   // Owner stats
-  const totalP  = tasks.filter(t=>t.status==='pending').length;
-  const totalD  = tasks.filter(t=>t.status==='done').length;
-  const totalU  = tasks.filter(t=>t.priority==='urgent'&&t.status==='pending').length;
+  const _open   = t => t.recurrence ? recurringOpenDates(t,today).length>0 : isOpenStatus(t.status);
+  const _done   = t => t.recurrence ? (t.doneDates||[]).indexOf(today)>=0 : t.status==='done';
+  const totalP  = tasks.filter(_open).length;
+  const totalD  = tasks.filter(_done).length;
+  const totalU  = tasks.filter(t=>t.priority==='urgent'&&_open(t)).length;
   document.getElementById('owner-task-stats').innerHTML=`
     <div class="task-stat"><div class="task-stat-num">${totalP}</div><div class="task-stat-lbl hi" data-hi="बाकी" data-en="Pending">बाकी</div></div>
     <div class="task-stat red"><div class="task-stat-num">${totalU}</div><div class="task-stat-lbl hi" data-hi="अत्यावश्यक" data-en="Urgent">अत्यावश्यक</div></div>
@@ -3161,12 +3298,13 @@ function renderOwnerTasks(){
     const groupTasks = groups[key];
     const priOrder={urgent:0,normal:1,low:2};
     groupTasks.sort((a,b)=>{
-      if(a.status==='done'&&b.status!=='done') return 1;
-      if(b.status==='done'&&a.status!=='done') return -1;
+      const aDone=_done(a), bDone=_done(b);
+      if(aDone&&!bDone) return 1;
+      if(bDone&&!aDone) return -1;
       return (priOrder[a.priority]||1)-(priOrder[b.priority]||1);
     });
-    const pending = groupTasks.filter(t=>t.status==='pending').length;
-    const done    = groupTasks.filter(t=>t.status==='done').length;
+    const pending = groupTasks.filter(_open).length;
+    const done    = groupTasks.filter(_done).length;
     return `
       <div class="owner-assignee-hdr">
         <div class="owner-assignee-name">👤 ${key}</div>
@@ -3180,50 +3318,100 @@ function renderOwnerTasks(){
 }
 // ── RENDER SINGLE TASK CARD ──
 function renderTaskCard(t, view){
-  const isDone     = t.status==='done';
+  const today = todayStr2();
+  const isDone = t.recurrence ? (t.doneDates||[]).indexOf(today)>=0 : t.status==='done';
   const priClass   = isDone?'done-card':(t.priority||'normal')+'-card';
-  const carriedBadge = t.carried?`<span class="task-badge badge-carried">📌 ${t.carriedFrom?'from '+t.carriedFrom:lang==='hi'?'कैरी':'Carried'}</span>`:'';
-  // Aging badge
+  const missedOccurrences = t.recurrence ? recurringOpenDates(t,today).filter(d=>d<today) : [];
+  const carriedBadge = t.recurrence
+    ? (missedOccurrences.length ? `<span class="task-badge badge-carried">📌 ${missedOccurrences.length} missed</span>` : '')
+    : (t.carried?`<span class="task-badge badge-carried">📌 ${t.carriedFrom?'from '+t.carriedFrom:lang==='hi'?'कैरी':'Carried'}</span>`:'');
+  const recurBadge = t.recurrence ? `<span class="task-badge" style="background:var(--teal-light,#e0f2f1);color:var(--teal,#00796b)">${recurrenceLabel(t.recurrence)}</span>` : '';
+  const typeBadge  = t.type ? `<span class="task-badge">${taskTypeLabel(t)}</span>` : '';
+  // Aging badge (one-off only — recurring "aging" is expressed via the missed-occurrences badge above)
   let agingBadge = '';
-  if(t.status==='pending' && t.date){
+  if(!t.recurrence && isOpenStatus(t.status) && t.date){
     const created = new Date(t.createdAt||t.date);
     const now2    = new Date();
     const days    = Math.floor((now2-created)/(1000*60*60*24));
     if(days>=3) agingBadge = `<span class="task-badge" style="background:var(--red-light);color:var(--red);font-weight:800">🔥 ${days}d old</span>`;
     else if(days>=1) agingBadge = `<span class="task-badge" style="background:var(--orange-light);color:var(--orange)">${days}d</span>`;
   }
+  const statusBadge = (!t.recurrence && t.status && t.status!=='done' && t.status!=='not_started')
+    ? `<span class="task-badge" style="background:${t.status==='blocked'?'var(--red-light)':'var(--orange-light)'};color:${t.status==='blocked'?'var(--red)':'var(--orange)'}">${t.status==='blocked'?(lang==='hi'?'⛔ रुका हुआ':'⛔ Blocked'):(lang==='hi'?'🔄 जारी':'🔄 In Progress')}</span>` : '';
   const dueBadge   = `<span class="task-badge badge-due">${t.due==='today'?(lang==='hi'?'आज':'Today'):t.due==='tomorrow'?(lang==='hi'?'कल':'Tomorrow'):(lang==='hi'?'इस हफ्ते':'This Week')}</span>`;
   const storeBadge = `<span class="task-badge badge-store">${t.store||'—'}</span>`;
   const priBadge   = `<span class="task-badge ${t.priority==='urgent'?'badge-urgent':t.priority==='low'?'badge-low':'badge-normal'}">${t.priority==='urgent'?'🔴':t.priority==='low'?'🟢':'🟡'} ${t.priority||'normal'}</span>`;
   const assignBadge = view==='owner'?`<span class="task-badge badge-assign">→ ${t.assignedTo||'—'}</span>`:'';
   const addedByBadge = view==='owner'&&t.addedBy?`<span class="task-badge badge-assign">by ${t.addedBy}</span>`:'';
   const sourceStrip = t.source?`<div class="task-from-strip">📋 ${t.source}</div>`:'';
+  const canEditThis = isOwnTask(t) || can('editAnyTask');
+  const canReassignThis = can('reassignTask');
+  const canDeleteThis = isOwnTask(t) || can('deleteAnyTask');
+  const canSeeHistory = (t.history&&t.history.length) && (isOwnTask(t) || can('viewTaskHistory'));
   return `<div class="task-card ${priClass}${isDone?' done-card':''}" id="tc_${t.id}">
     <div class="task-card-top">
       <div class="task-cb${isDone?' done':''}" onclick="toggleTaskDone('${t.id}')"></div>
       <div class="task-card-body">
         <div class="task-desc${isDone?' done-text':''}">${t.desc}</div>
-        <div class="task-meta">${priBadge}${dueBadge}${storeBadge}${assignBadge}${addedByBadge}${carriedBadge}${agingBadge}</div>
+        <div class="task-meta">${priBadge}${statusBadge}${typeBadge}${recurBadge}${dueBadge}${storeBadge}${assignBadge}${addedByBadge}${carriedBadge}${agingBadge}</div>
       </div>
     </div>
     ${sourceStrip}
     <div class="task-card-actions">
-      ${!isDone?`<button class="task-action-btn" onclick="editTaskDue('${t.id}')">${lang==='hi'?'📅 डेड्लाइन बदलें':'📅 Change Due'}</button>`:''}
-      ${!isDone?`<button class="task-action-btn" onclick="reassignTask('${t.id}')">${lang==='hi'?'👤 बदलें':'👤 Reassign'}</button>`:''}
-      <button class="task-action-btn red-btn" onclick="deleteTask('${t.id}')">${lang==='hi'?'🗑️ हटाएं':'🗑️ Delete'}</button>
+      ${!isDone&&canEditThis&&!t.recurrence?`<button class="task-action-btn" onclick="editTaskDue('${t.id}')">${lang==='hi'?'📅 डेड्लाइन बदलें':'📅 Change Due'}</button>`:''}
+      ${!isDone&&canEditThis&&!t.recurrence?`<button class="task-action-btn" onclick="setTaskStatus('${t.id}','in_progress')">${lang==='hi'?'🔄 जारी है':'🔄 In Progress'}</button>`:''}
+      ${!isDone&&canEditThis&&!t.recurrence?`<button class="task-action-btn" onclick="setTaskStatus('${t.id}','blocked')">${lang==='hi'?'⛔ रुका हुआ':'⛔ Blocked'}</button>`:''}
+      ${canReassignThis?`<button class="task-action-btn" onclick="reassignTask('${t.id}')">${lang==='hi'?'👤 बदलें':'👤 Reassign'}</button>`:''}
+      ${canSeeHistory?`<button class="task-action-btn" onclick="renderTaskHistory('${t.id}')">${lang==='hi'?'📜 History':'📜 History'}</button>`:''}
+      ${canDeleteThis?`<button class="task-action-btn red-btn" onclick="deleteTask('${t.id}')">${lang==='hi'?'🗑️ हटाएं':'🗑️ Delete'}</button>`:''}
     </div>
   </div>`;
 }
 // ── TASK ACTIONS ──
 function toggleTaskDone(id){
   let tasks = loadTasks();
-  tasks = tasks.map(t => t.id===id ? {...t, status: t.status==='done'?'pending':'done', doneAt: t.status!=='done'?new Date().toISOString():null} : t);
+  const today = todayStr2();
+  tasks = tasks.map(t => {
+    if(t.id!==id) return t;
+    if(t.recurrence){
+      // Recurring: toggle just TODAY's occurrence, not the task template itself
+      const doneDates = (t.doneDates||[]).slice();
+      const i = doneDates.indexOf(today);
+      const t2 = {...t, doneDates};
+      if(i>=0){ doneDates.splice(i,1); addTaskHistory(t2,'unmark_done','occurrence '+today); }
+      else { doneDates.push(today); addTaskHistory(t2,'mark_done','occurrence '+today); }
+      return t2;
+    }
+    const nowDone = t.status!=='done';
+    const t2 = {...t, status: nowDone?'done':'not_started', doneAt: nowDone?new Date().toISOString():null};
+    addTaskHistory(t2, nowDone?'mark_done':'unmark_done', '');
+    return t2;
+  });
+  saveTasks(tasks);
+  renderMyTasks();
+  if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
+  updateTaskCounts();
+  try{ var w=document.getElementById('cmd-mytasks-card'); if(w) renderMyTasksTodayWidget(w); }catch(e){}
+}
+function setTaskStatus(id, status){
+  // Status taxonomy beyond done/not-done: not_started / in_progress / blocked / done / cancelled
+  let tasks = loadTasks();
+  const t = tasks.filter(x=>x.id===id)[0];
+  if(t && !isOwnTask(t) && !can('editAnyTask')){ toast(lang==='hi'?'⛔ सिर्फ अपना टास्क बदल सकते हैं':'⛔ You can only update your own tasks'); return; }
+  tasks = tasks.map(x => {
+    if(x.id!==id) return x;
+    const x2 = {...x, status:status, doneAt: status==='done'?new Date().toISOString():x.doneAt};
+    addTaskHistory(x2,'status_change',status);
+    return x2;
+  });
   saveTasks(tasks);
   renderMyTasks();
   if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
   updateTaskCounts();
 }
 function deleteTask(id){
+  const t = loadTasks().filter(x=>x.id===id)[0];
+  if(t && !isOwnTask(t) && !can('deleteAnyTask')){ toast(lang==='hi'?'⛔ सिर्फ Manager/Owner दूसरों का टास्क हटा सकते हैं':'⛔ Only Manager/Owner can delete others’ tasks'); return; }
   if(!confirm(lang==='hi'?'इस टास्क को हटाएं?':'Delete this task?')) return;
   // Tombstone so the Sheets row gets marked 'deleted' on next sync
   try{ var _dels=loadDeletedTaskIds(); if(_dels.indexOf(id)<0) _dels.push(id); localStorage.setItem(TASK_DEL_KEY, JSON.stringify(_dels)); }catch(e){}
@@ -3233,23 +3421,26 @@ function deleteTask(id){
   updateTaskCounts();
 }
 function editTaskDue(id){
+  const t = loadTasks().filter(x=>x.id===id)[0];
+  if(t && !isOwnTask(t) && !can('editAnyTask')){ toast(lang==='hi'?'⛔ सिर्फ Manager/Owner दूसरों की डेडलाइन बदल सकते हैं':'⛔ Only Manager/Owner can change others’ deadlines'); return; }
   const opts=['today','tomorrow','this_week'];
   const lbls=lang==='hi'?['आज','कल','इस हफ्ते']:['Today','Tomorrow','This Week'];
   const choice=prompt(`${lang==='hi'?'नई डेड्लाइन चुनें:':'Choose new due:'} ${lbls.map((l,i)=>i+1+'. '+l).join(', ')}`);
   const idx=parseInt(choice)-1;
   if(isNaN(idx)||idx<0||idx>2) return;
   let tasks=loadTasks();
-  tasks=tasks.map(t=>t.id===id?{...t,due:opts[idx]}:t);
+  tasks=tasks.map(x=>{ if(x.id!==id) return x; const x2={...x,due:opts[idx]}; addTaskHistory(x2,'due_change',opts[idx]); return x2; });
   saveTasks(tasks);
   renderMyTasks();
   if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
 }
 function reassignTask(id){
+  if(!can('reassignTask')){ toast(lang==='hi'?'⛔ सिर्फ Manager/Owner दोबारा सौंप सकते हैं':'⛔ Only Manager/Owner can reassign tasks'); return; }
   const allPeople=['Manager','Owner (Neel)',...TEAMS.BC,...TEAMS.VKS];
   const choice=prompt(`${lang==='hi'?'किसको सौंपें? नाम लिखें:':'Reassign to? Type name:'} (${allPeople.join(', ')})`);
   if(!choice||!choice.trim()) return;
   let tasks=loadTasks();
-  tasks=tasks.map(t=>t.id===id?{...t,assignedTo:choice.trim()}:t);
+  tasks=tasks.map(x=>{ if(x.id!==id) return x; const from=x.assignedTo; const x2={...x,assignedTo:choice.trim()}; addTaskHistory(x2,'reassign',from+' → '+choice.trim()); return x2; });
   saveTasks(tasks);
   renderMyTasks();
   if(document.getElementById('task-view-owner').style.display!=='none') renderOwnerTasks();
@@ -3264,8 +3455,24 @@ function openQuickAdd(source){
   // pre-fill store from current checklist store
   const storeInp = document.getElementById('task-store-input');
   if(clState.store) storeInp.value = clState.store;
+  // Phase 4: auto-fill "Added By" from the logged-in user instead of asking every time
+  if(CURRENT_USER && CURRENT_USER.name){
+    const byInp = document.getElementById('task-addedby-input');
+    if(byInp){ if(![...byInp.options].some(o=>o.value===CURRENT_USER.name)){ const o=document.createElement('option'); o.value=CURRENT_USER.name; o.textContent=CURRENT_USER.name; byInp.appendChild(o); } byInp.value = CURRENT_USER.name; }
+  }
+  // Reset recurrence UI to "Once"
+  const recurSel = document.getElementById('task-recur-input');
+  if(recurSel){ recurSel.value=''; onRecurModeChange(); }
+  document.querySelectorAll('.recur-day-cb').forEach(cb=>cb.checked=false);
   modal.classList.add('open');
   setTimeout(()=>document.getElementById('task-desc-input').focus(),200);
+}
+// Phase 4: show/hide the recurrence detail rows based on the selected mode
+function onRecurModeChange(){
+  const mode = document.getElementById('task-recur-input').value;
+  document.getElementById('recur-until-row').style.display   = mode==='daily_till' ? '' : 'none';
+  document.getElementById('recur-weekly-row').style.display  = mode==='weekly'     ? '' : 'none';
+  document.getElementById('recur-monthly-row').style.display = mode==='monthly'    ? '' : 'none';
 }
 function closeModal(e){
   if(e===null || e.target===document.getElementById('task-modal')){
@@ -3281,14 +3488,33 @@ function saveTask(){
   const pri    = document.getElementById('task-priority-input').value;
   const due    = document.getElementById('task-due-input').value;
   const by     = document.getElementById('task-addedby-input').value;
+  const type   = document.getElementById('task-type-input') ? document.getElementById('task-type-input').value : 'other';
+  const recurMode = document.getElementById('task-recur-input') ? document.getElementById('task-recur-input').value : '';
   if(!desc){ toast(lang==='hi'?'टास्क लिखें':'Write the task'); return; }
+  // Phase 4: build the recurrence rule (null = one-off, unchanged legacy behavior)
+  let recurrence = null;
+  if(recurMode==='daily') recurrence = {mode:'daily'};
+  else if(recurMode==='daily_till'){
+    const until = document.getElementById('task-recur-until').value;
+    if(!until){ toast(lang==='hi'?'तारीख चुनें':'Pick an until-date'); return; }
+    recurrence = {mode:'daily_till', until};
+  } else if(recurMode==='weekly'){
+    const days = [...document.querySelectorAll('.recur-day-cb:checked')].map(cb=>parseInt(cb.value));
+    if(!days.length){ toast(lang==='hi'?'कम से कम एक दिन चुनें':'Pick at least one day'); return; }
+    recurrence = {mode:'weekly', days};
+  } else if(recurMode==='monthly'){
+    const day = parseInt(document.getElementById('task-recur-day').value)||1;
+    recurrence = {mode:'monthly', day};
+  }
   const task = {
     id: Date.now().toString(),
-    desc, assignedTo:assign, store, priority:pri,
-    due, addedBy:by, status:'pending',
+    desc, assignedTo:assign, store, priority:pri, type,
+    due, addedBy:by, status:'not_started',
     date: todayStr2(), source: modalContext||'',
     carried:false, carriedFrom:null, doneAt:null,
-    createdAt: new Date().toISOString()
+    recurrence, doneDates:[],
+    createdAt: new Date().toISOString(),
+    history: [{at:new Date().toISOString(), by:(CURRENT_USER?CURRENT_USER.name:by||'—'), action:'created', detail:''}]
   };
   const tasks = loadTasks();
   tasks.push(task);
@@ -3315,9 +3541,46 @@ function filterMyTasks(filter, btn){
 function updateTaskCounts(){
   const today=todayStr2();
   const tasks=loadTasks();
-  const todayTasks=tasks.filter(t=>t.date===today||t.carried);
-  document.getElementById('my-task-count').textContent  = todayTasks.filter(t=>t.status==='pending').length;
+  const oneOffToday = tasks.filter(t=>!t.recurrence && (t.date===today||t.carried));
+  const recurringOpen = tasks.filter(t=>t.recurrence && recurringOpenDates(t,today).length>0);
+  const todayTasks = oneOffToday.concat(recurringOpen);
+  document.getElementById('my-task-count').textContent  = oneOffToday.filter(t=>isOpenStatus(t.status)).length + recurringOpen.length;
   document.getElementById('all-task-count').textContent = todayTasks.length;
+}
+// ══ PHASE 4: "MY TASKS TODAY" DASHBOARD WIDGET ══════════════════════════
+// Compact, always-visible summary of what the logged-in person needs to do today —
+// pinned to the top of the dashboard for Team Members, shown lower for Manager/Owner.
+function renderMyTasksTodayWidget(container){
+  if(!container) return;
+  if(!CURRENT_USER){ container.innerHTML=''; return; }
+  const today = todayStr2();
+  const myName = CURRENT_USER.name;
+  const all = loadTasks();
+  const mine = all.filter(function(t){
+    if(t.assignedTo!==myName && t.addedBy!==myName) return false;
+    return isTaskOpenToday(t, today);
+  });
+  const overdueCount = mine.filter(function(t){
+    return t.recurrence ? recurringOpenDates(t,today).some(function(d){return d<today;}) : (t.carried);
+  }).length;
+  const header = '<div class="card-title">✅ '+(lang==='hi'?'आज मेरे टास्क':'My Tasks Today')+
+    ' <span style="font-size:11px;font-weight:600;color:var(--light)">('+mine.length+(overdueCount?', '+overdueCount+' '+(lang==='hi'?'पुराने':'overdue'):'')+')</span></div>';
+  if(mine.length===0){
+    container.innerHTML = header + '<div style="padding:10px 2px;font-size:12px;color:var(--light)">🎉 '+(lang==='hi'?'सब पूरा! कोई टास्क बाकी नहीं':'All clear — nothing pending')+'</div>';
+    return;
+  }
+  const priOrder={urgent:0,normal:1,low:2};
+  mine.sort(function(a,b){ return (priOrder[a.priority]||1)-(priOrder[b.priority]||1); });
+  const rows = mine.slice(0,6).map(function(t){
+    const badge = t.recurrence ? recurrenceLabel(t.recurrence) : (t.carried?'📌 '+(lang==='hi'?'कैरी':'Carried'):'');
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid #f5f4f0">'
+      +'<div class="task-cb" style="flex-shrink:0" onclick="toggleTaskDone(\''+t.id+'\')"></div>'
+      +'<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+t.desc+'</div>'
+      +'<div style="font-size:10px;color:var(--light)">'+(t.priority==='urgent'?'🔴 ':'')+badge+'</div></div>'
+      +'</div>';
+  }).join('');
+  const more = mine.length>6 ? '<div style="text-align:center;padding-top:6px"><button class="task-action-btn" onclick="switchTab(\'tasks\')">'+(lang==='hi'?'सभी देखें →':'View all →')+'</button></div>' : '';
+  container.innerHTML = header + '<div>'+rows+'</div>' + more;
 }
 // ── INLINE TASK BUTTON (added after each checklist section) ──
 function addInlineTask(sectionName, event){
@@ -4363,9 +4626,9 @@ function renderAnalytics(){
   </div>`;
   // Expected vs Completed
   const today2   = todayStr2();
-  const todayTasks = loadTasks().filter(t=>t.date===today2||t.carried);
+  const todayTasks = loadTasks().filter(t=> t.recurrence ? (recurringOpenDates(t,today2).length>0 || (t.doneDates||[]).indexOf(today2)>=0) : (t.date===today2||t.carried));
   const expTotal   = todayTasks.length;
-  const expDone    = todayTasks.filter(t=>t.status==='done').length;
+  const expDone    = todayTasks.filter(t=> t.recurrence ? (t.doneDates||[]).indexOf(today2)>=0 : t.status==='done').length;
   const expPct     = expTotal>0?Math.round(expDone/expTotal*100):0;
   const expColor   = expPct>=80?'var(--green)':expPct>=60?'var(--gold)':'var(--red)';
   html += `<div class="analytics-chart-wrap">
@@ -6175,12 +6438,46 @@ var ORG_MAP = {
 };
 function getUsers(){ try{ return JSON.parse(localStorage.getItem(LOGIN_KEY)||'{}'); }catch(e){ return {}; } }
 function saveUsers(u){ localStorage.setItem(LOGIN_KEY, JSON.stringify(u)); }
+// ══ PHASE 4: ROLE-BASED ACCESS CONTROL (RBAC) ══════════════════════════
+// Every job-function role in ALL_ROLES maps to exactly one access LEVEL:
+//   owner   → Neel — sees everything, every store, all business-config controls
+//   manager → store Manager / PC (Head Office) — sees their own store's team + data
+//   member  → everyone else (Sales, Billing, Inventory, Telecaller, CRM, BDA, Accountant...)
+// This sits on top of the existing job-function roles (which still control which
+// TABS a person sees via ALL_ROLES[].tabs) — the level only controls WHAT THEY CAN DO
+// once inside a tab (reassign/delete others' tasks, toggle WA automation, etc).
+function getAccessLevel(roles){
+  roles = roles || [];
+  if(roles.indexOf('Owner')>=0) return 'owner';
+  if(roles.indexOf('Manager')>=0 || roles.indexOf('PC')>=0) return 'manager';
+  return 'member';
+}
+var PERMISSIONS = {
+  reassignTask:        ['owner','manager'],
+  deleteAnyTask:       ['owner','manager'],
+  editAnyTask:         ['owner','manager'],
+  viewAllStores:       ['owner'],
+  toggleWAAutomation:  ['owner'],
+  resetOthersPin:      ['owner'],
+  approveInventoryOffer:['owner'],
+  viewTaskHistory:     ['owner','manager']
+};
+function can(action){
+  if(!CURRENT_USER) return false;
+  var lvl = CURRENT_USER.level || getAccessLevel(CURRENT_USER.roles);
+  return PERMISSIONS[action] && PERMISSIONS[action].indexOf(lvl) >= 0;
+}
+function isOwnTask(t){
+  if(!CURRENT_USER) return false;
+  return t && (t.assignedTo===CURRENT_USER.name || t.addedBy===CURRENT_USER.name);
+}
 var _loginSelName=null, _loginSelStore=null, _loginSelRoles=[];
 function initLogin(){
   // Already logged in?
   var sess=null; try{ sess=JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); }catch(e){}
   if(sess && sess.name){
     CURRENT_USER=sess;
+    if(!CURRENT_USER.level) CURRENT_USER.level = getAccessLevel(CURRENT_USER.roles); // backfill pre-Phase-4 sessions
     applyRoleVisibility();
     document.getElementById('login-overlay').classList.add('hidden');
     return;
@@ -6371,7 +6668,8 @@ function finalizeLogin(pinVerified){
   saveUsers(users);
   // Set session (Phase 2: with verification stamp)
   CURRENT_USER={name:_loginSelName, store:_loginSelStore, roles:_loginSelRoles.slice(),
-    pinVerified:!!pinVerified, loginAt:new Date().toISOString()};
+    pinVerified:!!pinVerified, loginAt:new Date().toISOString(),
+    level: getAccessLevel(_loginSelRoles)};
   localStorage.setItem(SESSION_KEY, JSON.stringify(CURRENT_USER));
   if(!pinVerified) toast('⚠️ '+(lang==='hi'?'Offline login — PIN server से verify नहीं हुआ':'Offline login — PIN not server-verified'));
   // Apply
@@ -6404,11 +6702,61 @@ function applyRoleVisibility(){
   });
   // Store scoping
   try{ applyStoreScoping(); }catch(e){}
+  // Phase 4: role-specific dashboard persona (owner/manager/member see different emphasis)
+  try{ applyDashboardPersona(); }catch(e){}
+  try{ applyTaskViewPermissions(); }catch(e){}
   // Add user chip to header
   addUserChip();
   // Switch to first allowed tab
   if(firstVisible) switchTab(firstVisible);
   try{ if(typeof refreshDashboard==='function') refreshDashboard(); }catch(e){}
+}
+// ══ PHASE 4: 3 ROLE-SPECIFIC DASHBOARD PERSONAS ═══════════════════════
+// Same single dashboard screen, but reshaped per access level:
+//  • member  — "My Tasks Today" pinned to the top, business-config controls hidden
+//  • manager — store command-center as before, WA automation ON/OFF locked (owner-only)
+//  • owner   — full command-center, all stores, all controls, nothing hidden
+function applyDashboardPersona(){
+  if(!CURRENT_USER) return;
+  var lvl = CURRENT_USER.level || getAccessLevel(CURRENT_USER.roles);
+  var dashTab = document.getElementById('tab-dashboard');
+  if(!dashTab) return;
+  // My Tasks Today widget — always shown, but pinned first for members
+  var widget = document.getElementById('cmd-mytasks-card');
+  if(!widget){
+    widget = document.createElement('div');
+    widget.id = 'cmd-mytasks-card';
+    widget.className = 'card';
+    widget.style.cssText = 'max-width:600px;margin:0 auto 12px';
+  }
+  var inner  = document.querySelector('#tab-dashboard > div');
+  var header = document.querySelector('#tab-dashboard .cmd-header');
+  if(inner && widget.parentElement !== inner){
+    if(header && header.nextSibling) inner.insertBefore(widget, header.nextSibling);
+    else inner.appendChild(widget);
+  }
+  renderMyTasksTodayWidget(widget);
+  if(lvl==='member' && inner){
+    inner.insertBefore(widget, inner.firstChild); // pinned to the very top for Team Members
+  }
+  // WA automation config: business-wide setting — Owner-only to change; Manager can still send a manual nudge
+  document.querySelectorAll('#rem-morning-toggle,#rem-evening-toggle').forEach(function(btn){
+    btn.disabled = !can('toggleWAAutomation');
+    btn.style.opacity = can('toggleWAAutomation') ? '1' : '.45';
+    btn.title = can('toggleWAAutomation') ? '' : (lang==='hi'?'सिर्फ Owner बदल सकते हैं':'Owner-only setting');
+  });
+  // Leaderboard/quick-actions stay visible for everyone — motivating for team members too
+}
+// ══ PHASE 4: TASK-TAB PERMISSIONS ══════════════════════════════════════
+// The "Owner View" (team-wide task view, with reassign/delete-others) is a manager/owner
+// permission — Team Members only ever see their own personal task list.
+function applyTaskViewPermissions(){
+  var ownerBtn = document.getElementById('trb-owner');
+  if(ownerBtn) ownerBtn.style.display = can('reassignTask') ? '' : 'none';
+  var ownerView = document.getElementById('task-view-owner');
+  if(!can('reassignTask') && ownerView && ownerView.style.display!=='none'){
+    setTaskView('my'); // bump a member back to their own view if they were somehow on it
+  }
 }
 function addUserChip(){
   if(!CURRENT_USER) return;
@@ -6609,9 +6957,9 @@ async function submitBDA(){
 // ══════════════════════════════════════════════════════════════
 function buildClosingPendingTasks(){
   var today=todayStr2();
-  var tasks=loadTasks().filter(function(t){ return t.status==='pending'; });
+  var tasks=loadTasks().filter(function(t){ return t.recurrence ? recurringOpenDates(t,today).length>0 : isOpenStatus(t.status); });
   // Role-aware: Manager/PC/Owner see all; others see own
-  var roleAll = CURRENT_USER && CURRENT_USER.roles && (CURRENT_USER.roles.indexOf('Manager')>=0 || CURRENT_USER.roles.indexOf('PC')>=0 || CURRENT_USER.roles.indexOf('Owner')>=0);
+  var roleAll = can('reassignTask'); // owner/manager see the whole store's pending list
   var myName = CURRENT_USER ? CURRENT_USER.name : '';
   if(!roleAll && myName){ tasks=tasks.filter(function(t){ return t.assignedTo===myName || t.addedBy===myName; }); }
   if(tasks.length===0){
@@ -6696,12 +7044,12 @@ function applyStoreScoping(){
 function collectAllPending(storeFilter){
   var today=todayStr2();
   var out=[];
-  // 1. From task system (loadTasks) — carried + current pending
+  // 1. From task system (loadTasks) — carried/recurring-open + current pending
   try{
-    var tasks=loadTasks().filter(function(t){ return t.status==='pending'; });
+    var tasks=loadTasks().filter(function(t){ return t.recurrence ? recurringOpenDates(t,today).length>0 : isOpenStatus(t.status); });
     tasks.forEach(function(t){
       if(storeFilter && t.store && t.store!==storeFilter) return;
-      out.push({who:t.assignedTo||'—', desc:t.desc, old:!!t.carriedFrom, from:t.carriedFrom||t.date, src:'task'});
+      out.push({who:t.assignedTo||'—', desc:t.desc, old: t.recurrence ? recurringOpenDates(t,today).some(function(d){return d<today;}) : !!t.carriedFrom, from:t.carriedFrom||t.date, src:'task'});
     });
   }catch(e){}
   return out;
@@ -7398,6 +7746,15 @@ function adminRunAll(){
   // Config
   test('CFG: SCRIPT_URL set',             ()=>SCRIPT_URL!=='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE');
   test('CFG: OWNER_PIN set',              ()=>typeof OWNER_PIN==='string'&&OWNER_PIN.length>0);
+  // Phase 4: RBAC + recurrence engine
+  test('FN: getAccessLevel owner',        ()=>getAccessLevel(['Owner'])==='owner');
+  test('FN: getAccessLevel manager',      ()=>getAccessLevel(['Manager'])==='manager');
+  test('FN: getAccessLevel member',       ()=>getAccessLevel(['Sales'])==='member');
+  test('FN: recurrence daily matches',    ()=>recurrenceMatchesDate({mode:'daily'}, todayStr2())===true);
+  test('FN: recurrence weekly filters',   ()=>{ var d=new Date(); return recurrenceMatchesDate({mode:'weekly',days:[d.getDay()]}, todayStr2())===true && recurrenceMatchesDate({mode:'weekly',days:[(d.getDay()+3)%7]}, todayStr2())===false; });
+  test('FN: recurringOpenDates today',    ()=>{ var t={date:todayStr2(),recurrence:{mode:'daily'},doneDates:[]}; return recurringOpenDates(t, todayStr2()).indexOf(todayStr2())>=0; });
+  test('FN: isTaskOpenToday one-off',     ()=>isTaskOpenToday({status:'not_started',date:todayStr2()}, todayStr2())===true);
+  test('FN: PERMISSIONS matrix defined',  ()=>typeof PERMISSIONS==='object' && Array.isArray(PERMISSIONS.reassignTask));
   // Restore
   switchTab('checklist');
   const passed = tests.filter(t=>t.ok).length;
