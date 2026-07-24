@@ -3336,7 +3336,9 @@ function renderTaskCard(t, view){
     if(days>=3) agingBadge = `<span class="task-badge" style="background:var(--red-light);color:var(--red);font-weight:800">🔥 ${days}d old</span>`;
     else if(days>=1) agingBadge = `<span class="task-badge" style="background:var(--orange-light);color:var(--orange)">${days}d</span>`;
   }
-  const statusBadge = (!t.recurrence && t.status && t.status!=='done' && t.status!=='not_started')
+  // Only show a status pill for EXPLICITLY set in_progress/blocked — legacy rows default to
+  // status:'pending' (pre-Phase-4 data), which must read as plain "not started", not "In Progress".
+  const statusBadge = (!t.recurrence && (t.status==='in_progress' || t.status==='blocked'))
     ? `<span class="task-badge" style="background:${t.status==='blocked'?'var(--red-light)':'var(--orange-light)'};color:${t.status==='blocked'?'var(--red)':'var(--orange)'}">${t.status==='blocked'?(lang==='hi'?'⛔ रुका हुआ':'⛔ Blocked'):(lang==='hi'?'🔄 जारी':'🔄 In Progress')}</span>` : '';
   const dueBadge   = `<span class="task-badge badge-due">${t.due==='today'?(lang==='hi'?'आज':'Today'):t.due==='tomorrow'?(lang==='hi'?'कल':'Tomorrow'):(lang==='hi'?'इस हफ्ते':'This Week')}</span>`;
   const storeBadge = `<span class="task-badge badge-store">${t.store||'—'}</span>`;
