@@ -1262,7 +1262,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
         <button class="cmd-reminder-toggle on" id="rem-evening-toggle" onclick="toggleReminder('evening',this)">ON</button>
       </div>
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid #f0ede8">
-        <div style="font-size:10px;color:var(--light);margin-bottom:6px">⚙️ Automation runs via Google Apps Script — configure numbers in Code.gs</div>
+        <!-- Bug #11 fix: this used to point Owners at Code.gs, which stopped being where
+             these settings live back at Phase 3 — everything below moved into the Config
+             sheet (WA_ENABLED, BHASH_PASS, reminder times, quiet hours) so it can be
+             changed without touching any code. -->
+        <div style="font-size:10px;color:var(--light);margin-bottom:6px">⚙️ Automation settings (on/off, times, quiet hours) live in the <b>Config</b> sheet in Google Sheets — no code editing needed. Open the spreadsheet → Config tab to change them.</div>
         <button class="cmd-wa-send" onclick="sendManualReminder()">
           💬 अभी Manual Reminder भेजें / Send Now
         </button>
@@ -2607,7 +2611,11 @@ async function loadReports(){
     updateAttReportStatus();
   } catch(e){
     loadEl.style.display='none';
-    listEl.innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div>${lang==='hi'?'डेटा लोड नहीं हो सका। Apps Script URL जांचें।':'Could not load data. Check Apps Script URL.'}</div>`;
+    // Bug #11 fix: this used to tell an ordinary user to "check Apps Script URL" —
+    // a technical instruction nobody using the Reports tab can actually act on.
+    // The honest, actionable message is about connectivity, which is what almost
+    // always causes this in practice; the outbox/retry path handles the rest.
+    listEl.innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div>${lang==='hi'?'डेटा लोड नहीं हो सका। इंटरनेट कनेक्शन जांचें और दोबारा कोशिश करें।':'Could not load data. Check your internet connection and try again.'}</div>`;
   }
 }
 function filterReports(){
@@ -2703,7 +2711,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.7-bug9';
+var APP_VERSION = '7.8-bug11';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
