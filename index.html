@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Bhartia Enterprises — Daily Operations</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#1a1a1a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -848,6 +853,19 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
 </style>
 </head>
 <body>
+<!-- BUG #9: honest offline status banner. Hidden by default; JS below shows/hides it
+     off the real navigator.onLine state and the online/offline events, so it never
+     claims connectivity the device doesn't have. -->
+<div id="be-offline-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:900;background:#7a1f1f;color:#fff;font-size:12px;font-weight:700;text-align:center;padding:6px 10px">
+  📡 <span data-hi="ऑफलाइन — इंटरनेट वापस आने पर अपने आप sync होगा" data-en="Offline — will sync automatically once connection returns">ऑफलाइन — इंटरनेट वापस आने पर अपने आप sync होगा</span>
+</div>
+<!-- Shown only after a newer app-shell version has finished downloading in the
+     background (service worker "updatefound"). Reload is a deliberate user tap,
+     never automatic, so it can't interrupt someone mid-submission. -->
+<div id="be-update-banner" style="display:none;position:fixed;bottom:64px;left:10px;right:10px;z-index:900;background:#1a1a1a;color:#fff;font-size:12px;font-weight:700;text-align:center;padding:9px 12px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.3)">
+  🔄 <span data-hi="नया वर्शन तैयार है।" data-en="A new version is ready.">नया वर्शन तैयार है।</span>
+  <button onclick="location.reload()" style="margin-left:8px;background:#b8860b;color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer">Refresh</button>
+</div>
 <!-- ALWAYS-VISIBLE SWITCH USER BUTTON -->
 <button id="force-switch-user" onclick="forceShowLogin()" style="position:fixed;top:8px;right:8px;z-index:800;background:#c62828;color:#fff;border:none;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,.3)">🔄 Login / Switch</button>
 <!-- ══════════════ ROLE-BASED LOGIN ══════════════ -->
@@ -2685,7 +2703,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.6-bug12';
+var APP_VERSION = '7.7-bug9';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -2925,6 +2943,47 @@ function appDataPullAndRefresh(){
     try{ if(typeof renderProductivity==='function') renderProductivity(); }catch(e){}
     return n;
   });
+}
+
+// ══════════════════════════════════════════════════════════════
+// BUG #9: honest offline status + service worker registration
+// ══════════════════════════════════════════════════════════════
+function updateOfflineBanner(){
+  var b = document.getElementById('be-offline-banner');
+  if(!b) return;
+  b.style.display = navigator.onLine ? 'none' : 'block';
+}
+window.addEventListener('online', function(){ updateOfflineBanner(); syncOutbox(false); beDiag('connectivity', {online:true}); });
+window.addEventListener('offline', function(){ updateOfflineBanner(); beDiag('connectivity', {online:false}); });
+document.addEventListener('DOMContentLoaded', updateOfflineBanner);
+
+// Registers the offline app shell. Feature-detected — on a browser/WebView
+// without service worker support (or where it's blocked), this simply does
+// nothing and the app keeps working exactly as it does today; nothing here
+// is required for the app's core functionality, only for offline shell load.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('./sw.js').then(function(reg){
+      beDiag('sw-registered', {scope: reg.scope});
+      reg.addEventListener('updatefound', function(){
+        var installing = reg.installing;
+        if(!installing) return;
+        installing.addEventListener('statechange', function(){
+          if(installing.state==='installed' && navigator.serviceWorker.controller){
+            // A newer shell is cached and will take over on next load. We do not
+            // force a reload mid-session — that could interrupt someone partway
+            // through filling a checklist. The pending-update banner below
+            // gives them a manual, non-disruptive way to pick it up now.
+            beDiag('sw-update-ready', {});
+            var upd=document.getElementById('be-update-banner');
+            if(upd) upd.style.display='block';
+          }
+        });
+      });
+    }).catch(function(err){ beDiag('sw-register-failed', {err:String(err)}); });
+  });
+} else {
+  beDiag('sw-unsupported', {});
 }
 
 window.addEventListener('online', function(){ syncOutbox(false); });
