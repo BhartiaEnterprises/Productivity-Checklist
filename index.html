@@ -1005,7 +1005,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
       <div id="cl-review-body"></div>
       <div class="btn-row">
         <button class="btn" onclick="clPrevStep()" data-hi="← वापस" data-en="← Back">← वापस</button>
-        <button class="btn green" onclick="clSubmit()" data-hi="✓ जमा करें" data-en="✓ Submit">✓ जमा करें</button>
+        <button class="btn green" id="cl-submit-btn" onclick="clSubmit()" data-hi="✓ जमा करें" data-en="✓ Submit">✓ जमा करें</button>
       </div>
     </div>
     <!-- LOADING + SUCCESS -->
@@ -2393,11 +2393,20 @@ function buildClReview(){
   </div>`;
 }
 async function clSubmit(){
-  // Duplicate-submit guard
+  // Duplicate-submit guard — set BEFORE validation (which now awaits a modal)
+  // so a rapid double-tap on Android cannot race in during that wait.
   if(_inflightForms['checklist']) return;
-  // Validate before submit
-  if(!validateBeforeSubmit()) return;
   _inflightForms['checklist']=true;
+  const _submitBtn = document.getElementById('cl-submit-btn');
+  if(_submitBtn){ _submitBtn.disabled=true; _submitBtn.style.opacity='0.55'; }
+  beDiag('submit-checklist-tap', {store: clState.store, type: clState.type});
+  // Validate before submit
+  const _valid = await validateBeforeSubmit();
+  if(!_valid){
+    _inflightForms['checklist']=false;
+    if(_submitBtn){ _submitBtn.disabled=false; _submitBtn.style.opacity=''; }
+    return;
+  }
   const mgr=document.getElementById('cl-manager')?.value||'';
   const date=document.getElementById('cl-date')?.value||'';
   const time=document.getElementById('cl-time')?.value||'';
@@ -2413,8 +2422,13 @@ async function clSubmit(){
     mgrNotes:clState.mgrNotes,rsNotes:clState.rsNotes,submittedAt:new Date().toISOString(),
     isEdit:clState.editMode?'1':'0'};
   var _clResult;
+  beDiag('submit-checklist-posting', {store: clState.store, type: clState.type});
   try{ _clResult = await submitAndVerify(payload); }
-  finally{ _inflightForms['checklist']=false; }
+  finally{
+    _inflightForms['checklist']=false;
+    if(_submitBtn){ _submitBtn.disabled=false; _submitBtn.style.opacity=''; }
+  }
+  beDiag('submit-checklist-result', {store: clState.store, type: clState.type, status: _clResult && _clResult.status, cid: payload.cid});
   // Phase 2: remember today's record so re-opening = edit mode, not a blank form
   try{ saveDaySnapshot(); }catch(e){}
   document.getElementById('cl-loading').style.display='none';
@@ -2671,7 +2685,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.5-phase5.1';
+var APP_VERSION = '7.6-bug12';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -3028,22 +3042,92 @@ function checkTaskBlankAlert(){
   saveBlankLog(log);
   return alerts;
 }
+// ══════════════════════════════════════════════════════════════
+// BUG #12 ROOT CAUSE FIX — in-page reason modal replaces window.prompt()
+// ══════════════════════════════════════════════════════════════
+// window.prompt()/confirm()/alert() are not reliable on Android: WhatsApp's
+// in-app browser (and several other embedded WebViews staff open links from)
+// silently no-ops them — the call returns null/undefined instantly with no
+// dialog ever shown to the user — and an installed PWA in standalone display
+// mode has JS dialogs suppressed entirely by Chrome policy. Since
+// validateBeforeSubmit() gated the whole Submit button behind prompt(), any
+// user hit by the 3-day blank-task check on one of those surfaces saw the
+// checklist silently refuse to submit: no dialog appeared, just the
+// "reason required" toast, forever, with no way to proceed. This is the
+// confirmed root cause of Bug #12 (Android Closing Checklist not submitting).
+// Fix: a real DOM overlay that behaves identically in every browser context.
+function askReasonModal(message){
+  return new Promise(function(resolve){
+    var done=false;
+    function finish(val){
+      if(done) return; done=true;
+      try{ document.body.removeChild(overlay); }catch(e){}
+      resolve(val);
+    }
+    var overlay=document.createElement('div');
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+    var box=document.createElement('div');
+    box.style.cssText='background:#fff;border-radius:12px;padding:18px;max-width:420px;width:100%;font-family:inherit;box-shadow:0 10px 40px rgba(0,0,0,.35)';
+    var msg=document.createElement('div');
+    msg.style.cssText='font-size:14px;font-weight:600;margin-bottom:12px;white-space:pre-wrap;color:#222';
+    msg.textContent=message;
+    var input=document.createElement('textarea');
+    input.rows=3;
+    input.style.cssText='width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:8px;padding:8px;font-size:14px;font-family:inherit;resize:vertical';
+    var btnRow=document.createElement('div');
+    btnRow.style.cssText='display:flex;gap:8px;margin-top:12px;justify-content:flex-end';
+    var cancelBtn=document.createElement('button');
+    cancelBtn.type='button';
+    cancelBtn.textContent=(typeof lang!=='undefined'&&lang==='hi')?'रद्द करें':'Cancel';
+    cancelBtn.style.cssText='padding:9px 16px;border-radius:8px;border:1px solid #ccc;background:#f5f5f5;font-size:13px;font-weight:600;cursor:pointer';
+    var okBtn=document.createElement('button');
+    okBtn.type='button';
+    okBtn.textContent=(typeof lang!=='undefined'&&lang==='hi')?'ठीक है':'OK';
+    okBtn.style.cssText='padding:9px 16px;border-radius:8px;border:none;background:#b8860b;color:#fff;font-size:13px;font-weight:700;cursor:pointer';
+    okBtn.addEventListener('click', function(){ finish(input.value); });
+    cancelBtn.addEventListener('click', function(){ finish(null); });
+    overlay.addEventListener('click', function(e){ if(e.target===overlay) finish(null); });
+    btnRow.appendChild(cancelBtn); btnRow.appendChild(okBtn);
+    box.appendChild(msg); box.appendChild(input); box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    setTimeout(function(){ try{ input.focus(); }catch(e){} }, 50);
+  });
+}
+// Lightweight, non-PII diagnostic trail for Bug #12. Logs to console only —
+// no PIN, no password, no attendance/points detail. Left on until the fix is
+// confirmed on a real staff Android device; safe to leave running otherwise
+// since it is console-only and costs nothing when devtools aren't open.
+function beDiag(tag, data){
+  try{
+    var mode = 'browser-tab';
+    if(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) mode='standalone-pwa';
+    else if(navigator.standalone) mode='ios-standalone';
+    console.log('[BE-DIAG]', tag, Object.assign({
+      v: (typeof APP_VERSION!=='undefined')?APP_VERSION:'?',
+      mode: mode,
+      ua: navigator.userAgent.slice(0,120),
+      t: new Date().toISOString()
+    }, data||{}));
+  }catch(e){}
+}
 // Validate checklist before submission
-function validateBeforeSubmit(){
+async function validateBeforeSubmit(){
   // Check task blank alerts
   const blankAlerts = checkTaskBlankAlert();
+  beDiag('validate-checklist', {store: clState.store, type: clState.type, blankAlerts: blankAlerts});
   if(blankAlerts.length>0){
     const names = blankAlerts.join(', ');
-    const reason = prompt(
+    const reason = await askReasonModal(
       (lang==='hi'
         ?`⚠️ ${names} के लिए 3+ दिनों से कोई टास्क नहीं भरा।
 कारण बताएं (reason required):`
         :`⚠️ No task filled for ${names} for 3+ consecutive days.
-Please give reason to continue:`),
-      ''
+Please give reason to continue:`)
     );
     if(!reason||!reason.trim()){
       toast(lang==='hi'?'❌ कारण जरूरी है — बिना कारण जमा नहीं होगा':'❌ Reason required — cannot submit without it');
+      beDiag('validate-checklist-cancelled', {store: clState.store, type: clState.type});
       return false;
     }
     // Save reason
@@ -4740,7 +4824,9 @@ async function submitProductivity(){
   var filled = slots.filter(function(s){return saved[s.id]&&saved[s.id].task;}).length;
   var pct = slots.length>0?Math.round(filled/slots.length*100):0;
   if(pct<60 && filled>0){
-    var reason = prompt((lang==='hi'?prodCurrentEmp+' की productivity '+pct+'% है (60% से कम). कारण:':prodCurrentEmp+' productivity '+pct+'% (below 60%). Reason:'),'');
+    // Same class of defect as Bug #12: window.prompt() is silently suppressed
+    // in several Android in-app browsers and in installed-PWA standalone mode.
+    var reason = await askReasonModal(lang==='hi'?prodCurrentEmp+' की productivity '+pct+'% है (60% से कम). कारण:':prodCurrentEmp+' productivity '+pct+'% (below 60%). Reason:');
     if(!reason||!reason.trim()){ toast(lang==='hi'?'❌ कारण जरूरी':'❌ Reason required'); return; }
   }
   await sendToSheets({
