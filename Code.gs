@@ -1424,13 +1424,26 @@ function getSheetData(ss, sheetName, store, dateOrMonth) {
   const data  = sheet.getDataRange().getValues();
   if (data.length<=1) return jsonResp({records:[]});
   const headers = data[0];
+  const hNames = headers.map(String);
+  const cDate  = hNames.indexOf('Date') >= 0 ? hNames.indexOf('Date') : hNames.indexOf('date');
   let records = data.slice(1).map(row=>{
     const obj={};
     headers.forEach((h,i)=>{ obj[String(h)]=row[i]!==undefined?String(row[i]):''; });
+    // Normalised copy of the Date cell, used for filtering only and stripped
+    // before the response is built. Date cells are stored sometimes as real
+    // Date objects and sometimes as text; the Date-object form stringifies to
+    // 'Sat Jul 25 2026 00:00:00 GMT+0530 (...)', which never matched a
+    // 'YYYY-MM-DD' query, so date-filtered reads returned an empty list even
+    // when rows existed. The original raw test is kept as an OR below, so
+    // nothing that matched before can stop matching.
+    obj.__dnorm = cDate >= 0 ? dstr(row[cDate]) : '';
     return obj;
   });
   if(store) records=records.filter(r=>r['Store']===store||r['store']===store);
-  if(dateOrMonth) records=records.filter(r=>(r['Date']||r['date']||'').startsWith(dateOrMonth));
+  if(dateOrMonth) records=records.filter(r=>
+    String(r['Date']||r['date']||'').indexOf(dateOrMonth)===0 ||
+    String(r.__dnorm||'').indexOf(dateOrMonth)===0);
+  records.forEach(r=>{ delete r.__dnorm; });
   records.reverse();
   return jsonResp({records});
 }
@@ -1815,14 +1828,17 @@ function buildState(ss, date, storeFilter) {
   // Attendance
   const at = lastRows(SH.ATTENDANCE, 800);
   if (at.rows.length) {
-    const aSt = col(at.header,'Store'), aDt = col(at.header,'Date');
-    const aSts = col(at.header,'Status'), aLO = col(at.header,'Lunch Out'), aLI = col(at.header,'Lunch In');
+    // Resolved per row rather than by header name — see attnRow(): the live
+    // header is one column out of step with what handleAttendance() writes,
+    // so col(header,'Status') was reading the staff member's NAME and
+    // lunchMissing could never be counted.
     at.rows.forEach(r => {
-      const s = String(r[aSt]||'');
-      if (!state.stores[s] || dstr(r[aDt]) !== date) return;
+      const a = attnRow(r);
+      const s = a.store;
+      if (!state.stores[s] || dstr(a.dateRaw) !== date) return;
       state.stores[s].attendance.done = true;
       state.stores[s].attendance.staffMarked++;
-      if (String(r[aSts]||'')==='present' && (String(r[aLO]||'')==='' || String(r[aLI]||'')===''))
+      if (a.status === 'present' && (a.lunchOut === '' || a.lunchIn === ''))
         state.stores[s].attendance.lunchMissing++;
     });
   }
@@ -2038,6 +2054,53 @@ function dashAppData(ss, prefixes) {
   }
   return out;
 }
+// ── Attendance column resolution (defensive, row-authoritative) ─────────
+// The live Attendance sheet's HEADER ROW predates the current writer. It
+// carries 13 names and no 'Submitted By':
+//   0 Timestamp 1 Store 2 Date 3 Supervisor 4 Staff Name 5 Status 6 Time In
+//   7 Lunch Out 8 Lunch In 9 Time Out 10 Remark 11 Work Hours 12 Submitted At
+// handleAttendance() has always written 14 values with 'Submitted By' at 4:
+//   0 Timestamp 1 Store 2 Date 3 Supervisor 4 Submitted By 5 Staff Name
+//   6 Status 7 Time In 8 Lunch Out 9 Lunch In 10 Time Out 11 Work Hours
+//   12 Remark 13 Submitted At
+// The header is only written when the sheet is empty, so it was never
+// migrated and every header.indexOf() lookup lands one column to the LEFT of
+// the real value — 'Staff Name' reads blank and 'Status' reads the person's
+// name. The header row is production data: it is never rewritten, reordered
+// or removed here (§3 "Add columns instead of replacing"). Instead each
+// reader resolves the layout from the ROW, whose shape the writer defines
+// deterministically, so both historic layouts read correctly side by side.
+var ATTN_STATUS_SET = { present:1, absent:1, late:1, halfday:1 };
+
+// Returns 1 for the current writer's layout, 0 for the legacy header layout.
+function attnLayoutOffset(r) {
+  // 1. Strongest evidence: which slot holds a real status value.
+  if (ATTN_STATUS_SET[String(r[6]||'').toLowerCase()]) return 1;
+  if (ATTN_STATUS_SET[String(r[5]||'').toLowerCase()]) return 0;
+  // 2. Only the current writer fills a 14th value (Submitted At).
+  if (String(r[13]||'') !== '') return 1;
+  // 3. Ambiguous (blank/unknown status on a short row) — trust the header.
+  return 0;
+}
+// Normalises one Attendance row to stable field names, whichever layout it
+// was written in. Store / Date / Supervisor sit at 1 / 2 / 3 in both.
+function attnRow(r) {
+  var o = attnLayoutOffset(r);
+  return {
+    store:      String(r[1]||''),
+    dateRaw:    r[2],
+    supervisor: String(r[3]||''),
+    name:       String(r[4 + o]||''),
+    status:     String(r[5 + o]||''),
+    timeIn:     String(r[6 + o]||''),
+    lunchOut:   String(r[7 + o]||''),
+    lunchIn:    String(r[8 + o]||''),
+    timeOut:    String(r[9 + o]||''),
+    workHours:  String(r[11]||''),          // index 11 in both layouts
+    remark:     String(r[o ? 12 : 10]||''),
+    layout:     o ? 'writer' : 'legacy'
+  };
+}
 // Attendance rows for one date, real statuses only — no invented categories.
 function dashAttendance(ss, date, stores) {
   const res = { rows:[], byStore:{} };
@@ -2048,19 +2111,16 @@ function dashAttendance(ss, date, stores) {
   if (!sh || sh.getLastRow() < 2) return res;
   const total = sh.getLastRow();
   const start = Math.max(2, total - 1200 + 1);
-  const header = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
   const rows = sh.getRange(start, 1, total - start + 1, sh.getLastColumn()).getValues();
-  const cSt = header.indexOf('Store'), cDt = header.indexOf('Date'), cNm = header.indexOf('Staff Name'),
-        cSs = header.indexOf('Status'), cLO = header.indexOf('Lunch Out'), cLI = header.indexOf('Lunch In'),
-        cIn = header.indexOf('Time In'), cOut = header.indexOf('Time Out');
   rows.forEach(function(r){
-    if (dstr(r[cDt]) !== date) return;
-    const s = String(r[cSt]||'');
-    const nm = String(r[cNm]||'');
-    const st = String(r[cSs]||'') || 'unknown';
+    const a = attnRow(r);
+    if (dstr(a.dateRaw) !== date) return;
+    const s = a.store;
+    const nm = a.name;
+    const st = a.status || 'unknown';
     const rec = { store:s, name:nm, status:st,
-                  timeIn:String(r[cIn]||''), timeOut:String(r[cOut]||''),
-                  lunchOut:String(r[cLO]||''), lunchIn:String(r[cLI]||'') };
+                  timeIn:a.timeIn, timeOut:a.timeOut,
+                  lunchOut:a.lunchOut, lunchIn:a.lunchIn };
     res.rows.push(rec);
     if (!res.byStore[s]) return;
     res.byStore[s].marked++;
@@ -2697,10 +2757,14 @@ function sendWeeklyDigest(ss, cfg, roster) {
     const data = at.getDataRange().getValues();
     const per = {};
     for (let i=1;i<data.length;i++) {
-      if (dstr(data[i][2]) < from) continue;
-      const nm = String(data[i][5]||''); if(!nm) continue;
+      // Was hardcoded to the current writer's column positions; attnRow()
+      // keeps that behaviour for new rows and additionally reads rows stored
+      // under the older layout instead of silently skipping them.
+      const a = attnRow(data[i]);
+      if (dstr(a.dateRaw) < from) continue;
+      const nm = a.name; if(!nm) continue;
       if (!per[nm]) per[nm]=0;
-      if (String(data[i][6])==='present'||String(data[i][6])==='late') per[nm]++;
+      if (a.status==='present'||a.status==='late') per[nm]++;
     }
     Object.keys(per).forEach(nm => astats.push(nm+' '+per[nm]+'d'));
   }
