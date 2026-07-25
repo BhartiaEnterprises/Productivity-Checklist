@@ -42,6 +42,9 @@ const SH = {
   SUBMITLOG      : 'Submit Log',
   // ── New in v5.3 (Phase 2) ──
   USERS          : 'Users',
+  // ── New in v5.5 (Phase 5.1, Bug #2) ──
+  // JSON document store for data that previously existed only in one browser.
+  APPDATA        : 'App Data',
 };
 
 // Phase 2: owner reset key = SHA-256 of 'BEOWNER|<owner PIN>'.
@@ -101,6 +104,14 @@ function doPost(e) {
       handleTaskSync(ss, d, now);
       logCid(ss, cid, type, d);
       return jsonResp({ status:'ok', timestamp: now });
+    }
+
+    // appdata (Phase 5.1): key/value document upsert — no All-Records log, no email.
+    // Returns the outcome so the client can tell a stale-write skip from a real save.
+    if (type === 'appdata') {
+      const adRes = handleAppData(ss, d, now);
+      logCid(ss, cid, type, d);
+      return jsonResp(adRes);
     }
 
     // set_pin (Phase 2): create PIN (first time) or owner reset
@@ -231,6 +242,14 @@ function doGet(e) {
     //   ?action=getTasks&since=<ISO>  → only rows updated after <ISO> (cheap polling, §19)
     if (action === 'getTasks') {
       return getTasksEndpoint(ss, safeParam(e,'store'), safeParam(e,'who'), safeParam(e,'since'));
+    }
+
+    // ── Phase 5.1 (Bug #2): server → client pull for the App Data documents ──
+    //   ?action=getAppData&prefix=be_          → everything the app stores
+    //   ?action=getAppData&keys=be_planner_v1  → one or more specific documents
+    //   ?action=getAppData&prefix=be_&since=<ISO> → only what changed (§19)
+    if (action === 'getAppData') {
+      return getAppDataEndpoint(ss, safeParam(e,'prefix'), safeParam(e,'keys'), safeParam(e,'since'));
     }
 
     // Phase 0: read-back verification — did submission <cid> actually land?
@@ -1604,6 +1623,114 @@ function getTasksEndpoint(ss, storeFilter, who, since) {
   }
   return jsonResp({ status:'ok', tasks: out, count: out.length, serverTime: new Date().toISOString() });
 }
+// ════════════════════════════════════════════════════════════════════
+// PHASE 5.1 (Bug #2): APP DATA — server-backed key/value document store
+// ════════════════════════════════════════════════════════════════════
+// Several business-critical things had no server path at all and lived only in
+// one browser's localStorage: the Monthly Planner, functional targets, individual
+// salesperson targets, points redemptions, the staff roster, leave records and the
+// timesheet lunch window. If that employee cleared their browser or changed phone,
+// the data was gone, and nobody else could ever see it.
+//
+// Rather than seven bespoke sheets and seven endpoints, this is one additive sheet
+// holding JSON documents keyed by the same string the client already uses as its
+// localStorage key. That keeps the change small, keeps every existing sheet and
+// column untouched (§3), and gives any future localStorage-only feature a home.
+//
+//   POST type_=appdata  key=<k> json=<json> updatedAt=<ISO>
+//   GET  ?action=getAppData&prefix=be_        → all documents under a prefix
+//   GET  ?action=getAppData&keys=a,b,c        → just these documents
+//
+// Conflict rule matches the task sync: last write wins, and a write is only applied
+// if its updatedAt is >= the stored one, so a phone that has been offline for a week
+// cannot clobber this morning's edit when it finally reconnects.
+const APPDATA_HEADERS = ['Key','Updated At','Updated By','Bytes','JSON'];
+// A Google Sheets cell holds 50,000 characters. Refuse anything close to that
+// rather than writing a silently truncated document that would corrupt on read.
+const APPDATA_MAX_CHARS = 45000;
+
+function getAppDataSheet(ss) {
+  let sh = ss.getSheetByName(SH.APPDATA);
+  if (!sh) sh = ss.insertSheet(SH.APPDATA);
+  if (sh.getLastRow() === 0) { appendRow(sh, APPDATA_HEADERS); styleHeader(sh); }
+  else {
+    const lastCol = sh.getLastColumn();
+    if (lastCol < APPDATA_HEADERS.length) {
+      const missing = APPDATA_HEADERS.slice(lastCol);
+      sh.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+      try { styleHeader(sh); } catch(e){}
+    }
+  }
+  return sh;
+}
+
+function handleAppData(ss, d, now) {
+  const key = String(d.key||'').trim();
+  if (!key) return { status:'error', message:'missing key' };
+  const json = String(d.json||'');
+  if (json.length > APPDATA_MAX_CHARS) {
+    return { status:'error', message:'document too large ('+json.length+' chars, max '+APPDATA_MAX_CHARS+')' };
+  }
+  // Must be valid JSON — a malformed document would break every client that pulls it.
+  try { JSON.parse(json); } catch(e) { return { status:'error', message:'json parse failed' }; }
+
+  const incomingAt = isoOrEmpty(d.updatedAt) || new Date().toISOString();
+  const by = String(d.actor || d.updatedBy || '');
+  const sh = getAppDataSheet(ss);
+
+  // Serialise writers: two managers saving the planner at the same second would
+  // otherwise both read row N as absent and append two rows for one key.
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(8000); } catch(e) { return { status:'error', message:'busy, retry' }; }
+  try {
+    const last = sh.getLastRow();
+    let rowIndex = 0, storedAt = '';
+    if (last >= 2) {
+      const keys = sh.getRange(2, 1, last - 1, 2).getValues();
+      for (let i = 0; i < keys.length; i++) {
+        if (String(keys[i][0]) === key) { rowIndex = i + 2; storedAt = isoOrEmpty(keys[i][1]); break; }
+      }
+    }
+    if (rowIndex && storedAt) {
+      const a = (new Date(incomingAt)).getTime(), b = (new Date(storedAt)).getTime();
+      if (!isNaN(a) && !isNaN(b) && a < b) {
+        return { status:'ok', skipped:'stale', storedAt: storedAt };
+      }
+    }
+    const row = [key, incomingAt, by, json.length, json];
+    if (rowIndex) sheet_setRow(sh, rowIndex, row);
+    else appendRow(sh, row);
+    return { status:'ok', key:key, updatedAt:incomingAt };
+  } finally {
+    try { lock.releaseLock(); } catch(e){}
+  }
+}
+
+function getAppDataEndpoint(ss, prefix, keysCsv, since) {
+  const sh = getAppDataSheet(ss);
+  if (sh.getLastRow() < 2) return jsonResp({ status:'ok', items:[], count:0, serverTime:new Date().toISOString() });
+  let wanted = null;
+  if (keysCsv) {
+    wanted = {};
+    keysCsv.split(',').forEach(function(k){ const t = k.trim(); if (t) wanted[t] = true; });
+  }
+  let sinceMs = 0;
+  if (since) { const _s = (new Date(String(since))).getTime(); if (!isNaN(_s)) sinceMs = _s; }
+
+  const data = sh.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < data.length; i++) {
+    const key = String(data[i][0]||'');
+    if (!key) continue;
+    if (wanted && !wanted[key]) continue;
+    if (prefix && key.indexOf(prefix) !== 0) continue;
+    const updatedAt = isoOrEmpty(data[i][1]);
+    if (sinceMs && updatedAt && (new Date(updatedAt)).getTime() <= sinceMs) continue;
+    out.push({ key:key, updatedAt:updatedAt, updatedBy:String(data[i][2]||''), json:String(data[i][4]||'') });
+  }
+  return jsonResp({ status:'ok', items: out, count: out.length, serverTime: new Date().toISOString() });
+}
+
 // Normalize a sheet cell to 'yyyy-MM-dd' (cells may be Date objects or strings)
 function dstr(v) {
   try {
@@ -2168,7 +2295,8 @@ function createAllSheets() {
     SH.WA_GROUPS, SH.VITALS, SH.LOG,
     SH.SOCIAL_EXEC, SH.BILLING_EXEC, SH.BILLING_CUST,
     SH.INVENTORY, SH.CRM, SH.BDA,
-    SH.DAILY_TRAINING, SH.SALESMAN, SH.POINTS
+    SH.DAILY_TRAINING, SH.SALESMAN, SH.POINTS,
+    SH.APPDATA
   ];
   allSheets.forEach(name => {
     const exists = !!ss.getSheetByName(name);

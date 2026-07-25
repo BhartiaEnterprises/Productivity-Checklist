@@ -2671,7 +2671,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.4-phase5.0';
+var APP_VERSION = '7.5-phase5.1';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -2808,9 +2808,114 @@ function submitStatusLine(status){
   if(status==='confirmed') return '<div style="margin-top:8px;font-size:12px;font-weight:700;color:var(--green)">✅ '+(lang==='hi'?'Google Sheets में confirmed saved':'Confirmed saved to Google Sheets')+'</div>';
   return '<div style="margin-top:8px;font-size:12px;font-weight:700;color:#b45309">📥 '+(lang==='hi'?'Local save हुआ — sync हो रहा है… (auto-retry होगा)':'Saved locally, syncing… (will auto-retry)')+'</div>';
 }
+// ══════════════════════════════════════════════════════════════
+// PHASE 5.1 (Bug #2): APP DATA — durable, shared key/value store
+// ══════════════════════════════════════════════════════════════
+// The Planner, targets, points redemptions, staff roster, leave records and the
+// lunch window used to be written straight to localStorage and nowhere else, so
+// they belonged to one browser and died with it. These helpers keep localStorage
+// as the fast local copy but make Google Sheets the source of truth.
+//
+// appDataSet() writes locally first (so the UI never waits on the network) and
+// then pushes through the normal sendToSheets pipeline, which means an offline
+// save lands in the outbox and syncs itself later — same guarantees as a checklist.
+var APPDATA_PREFIX = 'be_';
+function appDataStampKey(k){ return 'be_ad_ts_'+k; }
+function appDataLocalStamp(k){ try{ return localStorage.getItem(appDataStampKey(k))||''; }catch(e){ return ''; } }
+
+function appDataSet(key, valueObj){
+  var ts = new Date().toISOString();
+  var json;
+  try{ json = JSON.stringify(valueObj); }catch(e){ return; }
+  try{ localStorage.setItem(key, json); }catch(e){}
+  try{ localStorage.setItem(appDataStampKey(key), ts); }catch(e){}
+  // Fire-and-forget: sendToSheets retries 3x and queues to the outbox on failure,
+  // so we must not block the click handler waiting for a round trip.
+  try{ sendToSheets({ type_:'appdata', key:key, json:json, updatedAt:ts }); }catch(e){}
+}
+
+// Pull every App Data document and merge it in. Server wins only when its copy is
+// strictly newer than what this device last wrote — a tie leaves the local copy
+// alone, which protects an edit made offline moments ago.
+function appDataPull(){
+  return new Promise(function(resolve){
+    if(!SCRIPT_URL || SCRIPT_URL.indexOf('YOUR_GOOGLE') === 0){ resolve(0); return; }
+    var url = SCRIPT_URL+'?action=getAppData&prefix='+encodeURIComponent(APPDATA_PREFIX)+'&_ts='+Date.now();
+    var ctl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+    var tmr = ctl ? setTimeout(function(){ try{ ctl.abort(); }catch(e){} }, 20000) : null;
+    fetch(url, ctl ? {method:'GET', redirect:'follow', signal:ctl.signal} : {method:'GET', redirect:'follow'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(tmr) clearTimeout(tmr);
+        if(!j || j.status!=='ok' || !j.items){ resolve(0); return; }
+        var applied = 0;
+        for(var i=0;i<j.items.length;i++){
+          var it = j.items[i];
+          if(!it || !it.key || !it.json) continue;
+          // Never let a malformed server document overwrite good local data.
+          try{ JSON.parse(it.json); }catch(e){ continue; }
+          var localTs = appDataLocalStamp(it.key);
+          if(localTs && it.updatedAt){
+            var a = (new Date(it.updatedAt)).getTime(), b = (new Date(localTs)).getTime();
+            if(isNaN(a) || (!isNaN(b) && a <= b)) continue;
+          }
+          try{
+            localStorage.setItem(it.key, it.json);
+            localStorage.setItem(appDataStampKey(it.key), it.updatedAt||new Date().toISOString());
+            applied++;
+          }catch(e){}
+        }
+        try{ localStorage.setItem('be_last_sync_v1', new Date().toISOString()); }catch(e){}
+        resolve(applied);
+      })
+      .catch(function(){ if(tmr) clearTimeout(tmr); resolve(0); });
+  });
+}
+// ── Lunch window (shared) ────────────────────────────────────
+// Was two loose localStorage strings that only the manager's own phone knew about.
+// Reads the shared document first and falls back to the legacy keys, so an existing
+// device keeps its current setting until someone changes it.
+var LUNCH_KEY = 'be_lunch_v1';
+function getLunchWindow(){
+  var d=null;
+  try{ d=JSON.parse(localStorage.getItem(LUNCH_KEY)||'null'); }catch(e){}
+  if(d && d.start){ return {start:parseInt(d.start,10)||13, end:parseInt(d.end,10)||14}; }
+  return {
+    start: parseInt(localStorage.getItem('prod_lunch_start')||'13',10)||13,
+    end:   parseInt(localStorage.getItem('prod_lunch_end')||'14',10)||14
+  };
+}
+
+// ── Leave records (shared) ───────────────────────────────────
+// be_leaves_<date> was read by the points engine but never written by anything, so
+// "absent without leave application" penalised people who had in fact applied.
+function leavesKeyFor(date){ return 'be_leaves_'+(date||todayStr2()); }
+function persistLeaveApps(){
+  try{
+    var list=(typeof clState!=='undefined' && clState.leaveApps) ? clState.leaveApps : [];
+    var clean=[];
+    for(var i=0;i<list.length;i++){
+      var l=list[i]; if(!l || !l.name) continue;
+      clean.push({name:l.name, type:l.type||'', from:l.from||'', to:l.to||'', reason:l.reason||'', granted:l.granted||'pending'});
+    }
+    appDataSet(leavesKeyFor(todayStr2()), clean);
+  }catch(e){}
+}
+
+// Refresh the visible screen if a pull changed anything underneath it.
+function appDataPullAndRefresh(){
+  return appDataPull().then(function(n){
+    if(!n) return n;
+    try{ if(typeof TEAMS!=='undefined'){ var st=getStaffList(); TEAMS.BC=st.BC||TEAMS.BC; TEAMS.VKS=st.VKS||TEAMS.VKS; } }catch(e){}
+    try{ if(typeof renderPlanner==='function' && document.getElementById('tab-planner')) renderPlanner(); }catch(e){}
+    try{ if(typeof renderProductivity==='function') renderProductivity(); }catch(e){}
+    return n;
+  });
+}
+
 window.addEventListener('online', function(){ syncOutbox(false); });
 setInterval(function(){ syncOutbox(false); }, 90000);
-document.addEventListener('DOMContentLoaded', function(){ updateOutboxBadge(); setTimeout(function(){ syncOutbox(false); }, 4000); setTimeout(function(){ try{ doTaskSync(); }catch(e){} }, 8000); });
+document.addEventListener('DOMContentLoaded', function(){ updateOutboxBadge(); setTimeout(function(){ syncOutbox(false); }, 4000); setTimeout(function(){ try{ doTaskSync(); }catch(e){} }, 8000); setTimeout(function(){ try{ appDataPullAndRefresh(); }catch(e){} }, 6000); });
 console.log('BE Productivity App ' + APP_VERSION);
 // ── Re-compress image ────────────────────────────────────────────
 function recompressImage(base64, maxW, quality){
@@ -2997,7 +3102,7 @@ function getStaffList(){
   };
 }
 function saveStaffList(list){
-  localStorage.setItem(STAFF_KEY, JSON.stringify(list));
+  appDataSet(STAFF_KEY, list);   // Phase 5.1: roster is company data, not browser data
   // Update TEAMS global
   TEAMS.BC  = list.BC  || [];
   TEAMS.VKS = list.VKS || [];
@@ -3857,15 +3962,18 @@ function addLeave(){
 }
 function updateLeave(i,field,val){
   clState.leaveApps[i][field]=val;
+  persistLeaveApps();
   if(field==='granted') refreshPresentGrid();
 }
 function grantLeave(i,val){
   clState.leaveApps[i].granted=val;
+  persistLeaveApps();
   document.getElementById('leave-container').innerHTML=renderLeaveSection();
   refreshPresentGrid();
 }
 function removeLeave(i){
   clState.leaveApps.splice(i,1);
+  persistLeaveApps();
   document.getElementById('leave-container').innerHTML=renderLeaveSection();
   refreshPresentGrid();
 }
@@ -4546,8 +4654,9 @@ function prodAddEmp(){
 }
 function prodGenSlots(){
   var slots=[], h=10, m=0;
-  var lunchStart=parseInt(localStorage.getItem('prod_lunch_start')||'13');
-  var lunchEnd=parseInt(localStorage.getItem('prod_lunch_end')||'14');
+  var _lw=getLunchWindow();
+  var lunchStart=_lw.start;
+  var lunchEnd=_lw.end;
   while(h<21){
     var start=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
     var m2=m+prodBlock, h2=h+Math.floor(m2/60); m2=m2%60;
@@ -5249,7 +5358,7 @@ function sendManualReminder(){
 // ══════════════════════════════════════════════════════════════
 var PTS_KEY = 'be_points_v1';
 function loadPoints(){ try{return JSON.parse(localStorage.getItem(PTS_KEY)||'{}')}catch(e){return{}} }
-function savePoints(d){ localStorage.setItem(PTS_KEY,JSON.stringify(d)); }
+function savePoints(d){ appDataSet(PTS_KEY, d); }
 function awardPoints(staffName, reason, pts){
   if(!staffName||!pts) return;
   var data=loadPoints(), today=todayStr2();
@@ -5342,11 +5451,15 @@ function updateChecklistProgress(){
   if(pctEl) pctEl.textContent=pct+'%';
 }
 function setLunchTime(){
-  var start=prompt(lang==='hi'?'लंच शुरू (घंटा, जैसे 13):':'Lunch start hour (e.g. 13):',localStorage.getItem('prod_lunch_start')||'13');
+  var cur=getLunchWindow();
+  var start=prompt(lang==='hi'?'लंच शुरू (घंटा, जैसे 13):':'Lunch start hour (e.g. 13):',String(cur.start));
   if(!start) return;
-  var end=prompt(lang==='hi'?'लंच खत्म (घंटा, जैसे 14):':'Lunch end hour (e.g. 14):',localStorage.getItem('prod_lunch_end')||'14');
+  var end=prompt(lang==='hi'?'लंच खत्म (घंटा, जैसे 14):':'Lunch end hour (e.g. 14):',String(cur.end));
   if(!end) return;
+  // Legacy keys stay written so nothing that still reads them breaks; the shared
+  // document is what actually travels between devices.
   localStorage.setItem('prod_lunch_start',start); localStorage.setItem('prod_lunch_end',end);
+  appDataSet(LUNCH_KEY, {start:parseInt(start,10)||13, end:parseInt(end,10)||14});
   toast('🍽️ Lunch: '+start+':00 – '+end+':00'); renderProductivity();
 }
 // ══════════════════════════════════════════════════════════════
@@ -5362,7 +5475,7 @@ function formatNum(n){
   return String(Math.round(n));
 }
 function loadPlan(){ try{return JSON.parse(localStorage.getItem(PLAN_KEY)||'{}')}catch(e){return{}} }
-function savePlan(d){ localStorage.setItem(PLAN_KEY,JSON.stringify(d)); }
+function savePlan(d){ appDataSet(PLAN_KEY, d); }
 function getPlanKey(store, month){
   return store + '_' + month;
 }
@@ -7299,14 +7412,14 @@ function funcTargetKey(store, month){ return 'be_functargets_'+store+'_'+month; 
 function loadFuncTargets(store, month){ try{ return JSON.parse(localStorage.getItem(funcTargetKey(store,month))||'{}'); }catch(e){ return {}; } }
 function saveFuncTargetVal(store, month, fnId, k, val){
   var d=loadFuncTargets(store,month); if(!d[fnId]) d[fnId]={}; d[fnId][k]=val;
-  localStorage.setItem(funcTargetKey(store,month), JSON.stringify(d));
+  appDataSet(funcTargetKey(store,month), d);
 }
 // Individual salesperson targets (per person)
 function indivTargetKey(store, month){ return 'be_indivtargets_'+store+'_'+month; }
 function loadIndivTargets(store, month){ try{ return JSON.parse(localStorage.getItem(indivTargetKey(store,month))||'{}'); }catch(e){ return {}; } }
 function saveIndivTarget(store, month, person, k, val){
   var d=loadIndivTargets(store,month); if(!d[person]) d[person]={}; d[person][k]=val;
-  localStorage.setItem(indivTargetKey(store,month), JSON.stringify(d));
+  appDataSet(indivTargetKey(store,month), d);
 }
 function buildTargetsPanel(store, month){
   var indiv=loadIndivTargets(store,month);
@@ -7435,7 +7548,7 @@ var POINT_RULES = {
 };
 var PTS_REDEEM_KEY='be_points_redeem_v1';
 function loadRedemptions(){ try{ return JSON.parse(localStorage.getItem(PTS_REDEEM_KEY)||'{}'); }catch(e){ return {}; } }
-function saveRedemptions(d){ localStorage.setItem(PTS_REDEEM_KEY, JSON.stringify(d)); }
+function saveRedemptions(d){ appDataSet(PTS_REDEEM_KEY, d); }
 // Net points = earned total − redeemed
 function netPoints(name){
   var data=loadPoints();
