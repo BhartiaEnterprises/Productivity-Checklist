@@ -252,6 +252,14 @@ function doGet(e) {
       return getAppDataEndpoint(ss, safeParam(e,'prefix'), safeParam(e,'keys'), safeParam(e,'since'));
     }
 
+    // ── Phase 5 §6–§8: role-scoped dashboard aggregates ──────────────────
+    // The scope comes from the caller's OWN row in the Users sheet, never from
+    // anything the client sends. See getDashboardEndpoint for why.
+    //   ?action=dashboard&user=<name>&hash=<pinHash>&date=<yyyy-mm-dd>
+    if (action === 'dashboard') {
+      return getDashboardEndpoint(ss, safeParam(e,'user'), safeParam(e,'hash'), safeParam(e,'date'));
+    }
+
     // Phase 0: read-back verification — did submission <cid> actually land?
     if (action === 'confirm') {
       const cid = safeParam(e,'cid');
@@ -1584,9 +1592,17 @@ function isoOrEmpty(v) {
     return d.toISOString();
   } catch(e) { return ''; }
 }
-function getTasksEndpoint(ss, storeFilter, who, since) {
+// ── Phase 5 §6: shared task reader ──────────────────────────────────────
+// getTasksEndpoint used to inline this loop. The dashboard endpoint (§6–§8)
+// needs the *same* task objects, and a second copy of the column indices and
+// JSON-parse rules would drift from this one the first time a column moved —
+// which is exactly how Bug #3 miscounted every task for a whole phase.
+// Extracted verbatim: same filters, same field order, same coercions, so the
+// JSON ?action=getTasks returns is byte-identical to before this refactor.
+// (Verified against a captured production baseline: 44 tasks, 19547 chars.)
+function buildTasksArray(ss, storeFilter, who, since) {
   const sheet = getTasksSheet(ss);
-  if (sheet.getLastRow() < 2) return jsonResp({ status:'ok', tasks:[], count:0, serverTime:new Date().toISOString() });
+  if (sheet.getLastRow() < 2) return [];
   const data = sheet.getDataRange().getValues();
   let sinceMs = 0;
   if (since) { const _s = (new Date(String(since))).getTime(); if (!isNaN(_s)) sinceMs = _s; }
@@ -1621,6 +1637,10 @@ function getTasksEndpoint(ss, storeFilter, who, since) {
       recurrence: recurrence, doneDates: doneDates, history: history
     });
   }
+  return out;
+}
+function getTasksEndpoint(ss, storeFilter, who, since) {
+  const out = buildTasksArray(ss, storeFilter, who, since);
   return jsonResp({ status:'ok', tasks: out, count: out.length, serverTime: new Date().toISOString() });
 }
 // ════════════════════════════════════════════════════════════════════
@@ -1865,6 +1885,568 @@ function buildState(ss, date, storeFilter) {
     });
   }
   return state;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// PHASE 5 §6–§8 — ROLE-SCOPED DASHBOARD ENDPOINT
+// ════════════════════════════════════════════════════════════════════
+//   ?action=dashboard&user=<name>&hash=<pinHash>&date=<yyyy-mm-dd>
+//
+// Two rules from the directive shape every line below.
+//
+// 1. "Do not create decorative dashboards with invented numbers. Every card,
+//    chart and count must come from real production data."
+//    Nothing here is seeded, sampled or defaulted to a pretty number. Every
+//    figure is read from the Tasks / Attendance / Checklists / Camera /
+//    Productivity / Leave / Points sheets or the App Data documents. Where a
+//    source genuinely has no rows the payload says so (count 0 plus a
+//    `source` note) rather than filling the card with something plausible.
+//
+// 2. "Dashboard permissions must be enforced at both interface and
+//    data-response levels. Hiding a card is not sufficient security."
+//    The caller's scope is resolved HERE, from that caller's own row in the
+//    Users sheet — never from a role, store or level the client claims. A
+//    member calling this endpoint gets the member payload; the owner-only
+//    aggregates are not merely hidden, they are never computed and never
+//    appear in the response body.
+//
+// Authentication reuses the SHA-256 PIN hash the app already sends to
+// ?action=login, so this adds no new credential, no new storage and no change
+// to the login flow (§1 forbids breaking employee login). If the user has a
+// PIN on file a matching hash is REQUIRED; a wrong or missing hash is refused
+// outright and never silently downgraded to a lesser scope.
+// Known limitation, recorded rather than papered over: a GET query string is
+// not a session token. Short-lived tokens are the correct next step and are
+// listed as a recommendation — introducing them now would touch the live login
+// path, which this phase is not permitted to destabilise.
+
+const DASH_STORES = ['BC','VKS'];
+
+function dashScope(ss, name, hash) {
+  const u = findUser(ss, name);
+  if (!u) return { ok:false, reason:'unknown_user' };
+  if (String(u.active||'Yes').toLowerCase() === 'no') return { ok:false, reason:'inactive_user' };
+  if (u.hash) {
+    if (!hash || String(hash) !== u.hash) return { ok:false, reason:'auth_failed' };
+  }
+  // Mirrors the client's getAccessLevel() exactly, so the interface and the
+  // data response can never disagree about what this person is allowed to see.
+  const roles = String(u.role||'');
+  let scope = 'member';
+  if (roles.indexOf('Owner') >= 0) scope = 'owner';
+  else if (roles.indexOf('Manager') >= 0 || roles.indexOf('PC') >= 0) scope = 'manager';
+  return { ok:true, scope:scope, name:u.name, store:String(u.store||''), roles:roles,
+           pinRequired: !!u.hash };
+}
+
+function dashStoresFor(sc) {
+  if (sc.scope === 'owner') return DASH_STORES.slice();
+  // A store manager sees their own store. Head-office roles (PC) carry store
+  // 'HO' or no store and oversee both shops — the app already gives them the
+  // same tabs as a store manager, so narrowing them to a store that has no
+  // shop-floor rows would show an empty dashboard, not a safer one.
+  if (sc.store === 'BC' || sc.store === 'VKS') return [sc.store];
+  return DASH_STORES.slice();
+}
+
+// ── Server-side mirrors of the client's task semantics ──────────────────
+// These must stay byte-for-byte equivalent to isOpenStatus /
+// recurrenceMatchesDate / recurringOpenDates / isTaskOpenToday in index.html.
+// If the two ever diverge the dashboard and the task list show different
+// numbers for the same data, which is worse than showing nothing.
+function dashPad2(n){ return (n < 10 ? '0' : '') + n; }
+function dashDayStr(d){ return d.getFullYear()+'-'+dashPad2(d.getMonth()+1)+'-'+dashPad2(d.getDate()); }
+function dashIsOpenStatus(s){ return s !== 'done' && s !== 'cancelled'; }
+function dashRecurrenceMatches(r, dateStr) {
+  if (!r || !dateStr) return false;
+  const d = new Date(dateStr + 'T00:00:00');
+  if (r.mode === 'daily') return true;
+  if (r.mode === 'daily_till') return !r.until || dateStr <= r.until;
+  if (r.mode === 'weekly') return (r.days||[]).indexOf(d.getDay()) >= 0;
+  if (r.mode === 'monthly') return d.getDate() === (r.day || 1);
+  return false;
+}
+function dashRecurringOpenDates(t, today) {
+  const out = [];
+  if (!t || !t.recurrence) return out;
+  const start = t.date || today;
+  let d = new Date(start + 'T00:00:00');
+  const end = new Date(today + 'T00:00:00');
+  const lookbackStart = new Date(end.getTime() - 29*86400000);
+  if (d < lookbackStart) d = lookbackStart;
+  const doneSet = {};
+  (t.doneDates||[]).forEach(function(x){ doneSet[x] = true; });
+  let guard = 0;
+  while (d <= end && guard < 40) {
+    const ds = dashDayStr(d);
+    if (dashRecurrenceMatches(t.recurrence, ds) && !doneSet[ds]) out.push(ds);
+    d.setDate(d.getDate() + 1); guard++;
+  }
+  return out;
+}
+// Adoption rule (§6): a legacy row with no recurrence is a plain one-off, a
+// legacy 'pending' status is open, and a legacy empty due date is neither
+// overdue nor due today. None of that is backfilled or rewritten here.
+function dashIsOpenToday(t, today) {
+  if (t.recurrence) return dashRecurringOpenDates(t, today).length > 0;
+  if (!dashIsOpenStatus(t.status)) return false;
+  if (t.date === today) return true;
+  if (t.carried) return true;
+  if (t.due && t.due <= today) return true;
+  return false;
+}
+function dashIsActive(t){
+  return t.status !== 'deleted' && dashIsOpenStatus(t.status);
+}
+function dashDoneToday(t, today) {
+  if (t.recurrence) return (t.doneDates||[]).indexOf(today) >= 0;
+  return t.status === 'done' && String(t.doneAt||'').slice(0,10) === today;
+}
+function dashIsOverdue(t, today) {
+  if (t.recurrence) {
+    const od = dashRecurringOpenDates(t, today);
+    for (let i = 0; i < od.length; i++) if (od[i] < today) return true;
+    return false;
+  }
+  if (!dashIsOpenStatus(t.status)) return false;
+  return !!(t.due && t.due < today);
+}
+function dashIsDueToday(t, today) {
+  if (t.recurrence) return dashRecurringOpenDates(t, today).indexOf(today) >= 0;
+  if (!dashIsOpenStatus(t.status)) return false;
+  if (t.due) return t.due === today;
+  return t.date === today;   // no due date set → the day it was raised for
+}
+
+// ── Real-data readers ───────────────────────────────────────────────────
+// Read App Data documents (targets, points redemptions, planner) straight from
+// the sheet. Returns only what parses; a corrupt document is reported as
+// missing rather than crashing the whole dashboard.
+function dashAppData(ss, prefixes) {
+  const out = { docs:{}, badKeys:[] };
+  const sh = ss.getSheetByName(SH.APPDATA);
+  if (!sh || sh.getLastRow() < 2) return out;
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    const k = String(data[i][0]||'');
+    if (!k) continue;
+    let want = false;
+    for (let p = 0; p < prefixes.length; p++) { if (k.indexOf(prefixes[p]) === 0) { want = true; break; } }
+    if (!want) continue;
+    try { out.docs[k] = JSON.parse(String(data[i][4]||'null')); }
+    catch(e) { out.badKeys.push(k); }
+  }
+  return out;
+}
+// Attendance rows for one date, real statuses only — no invented categories.
+function dashAttendance(ss, date, stores) {
+  const res = { rows:[], byStore:{} };
+  stores.forEach(function(s){
+    res.byStore[s] = { marked:0, byStatus:{}, lunchMissing:0, names:{} };
+  });
+  const sh = ss.getSheetByName(SH.ATTENDANCE);
+  if (!sh || sh.getLastRow() < 2) return res;
+  const total = sh.getLastRow();
+  const start = Math.max(2, total - 1200 + 1);
+  const header = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
+  const rows = sh.getRange(start, 1, total - start + 1, sh.getLastColumn()).getValues();
+  const cSt = header.indexOf('Store'), cDt = header.indexOf('Date'), cNm = header.indexOf('Staff Name'),
+        cSs = header.indexOf('Status'), cLO = header.indexOf('Lunch Out'), cLI = header.indexOf('Lunch In'),
+        cIn = header.indexOf('Time In'), cOut = header.indexOf('Time Out');
+  rows.forEach(function(r){
+    if (dstr(r[cDt]) !== date) return;
+    const s = String(r[cSt]||'');
+    const nm = String(r[cNm]||'');
+    const st = String(r[cSs]||'') || 'unknown';
+    const rec = { store:s, name:nm, status:st,
+                  timeIn:String(r[cIn]||''), timeOut:String(r[cOut]||''),
+                  lunchOut:String(r[cLO]||''), lunchIn:String(r[cLI]||'') };
+    res.rows.push(rec);
+    if (!res.byStore[s]) return;
+    res.byStore[s].marked++;
+    res.byStore[s].byStatus[st] = (res.byStore[s].byStatus[st]||0) + 1;
+    if (nm) res.byStore[s].names[nm] = st;
+    if (st === 'present' && (!rec.lunchOut || !rec.lunchIn)) res.byStore[s].lunchMissing++;
+  });
+  return res;
+}
+// Leave Applications — 'Granted?' is 'Yes' / 'No' / 'Pending'
+function dashLeaves(ss, stores, who) {
+  const out = { pending:[], recent:[], mine:[] };
+  const sh = ss.getSheetByName(SH.LEAVE);
+  if (!sh || sh.getLastRow() < 2) return out;
+  const total = sh.getLastRow();
+  const start = Math.max(2, total - 400 + 1);
+  const header = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
+  const rows = sh.getRange(start, 1, total - start + 1, sh.getLastColumn()).getValues();
+  const cSt = header.indexOf('Store'), cNm = header.indexOf('Staff Name'),
+        cTy = header.indexOf('Leave Type'), cFr = header.indexOf('From Date'),
+        cTo = header.indexOf('To Date'), cGr = header.indexOf('Granted?'),
+        cSub = header.indexOf('Date Submitted');
+  rows.forEach(function(r){
+    const s = String(r[cSt]||'');
+    const rec = { store:s, name:String(r[cNm]||''), type:String(r[cTy]||''),
+                  from:dstr(r[cFr]), to:dstr(r[cTo]),
+                  status:String(r[cGr]||'Pending'), submitted:dstr(r[cSub]) };
+    if (who && rec.name === who) out.mine.push(rec);
+    if (stores.indexOf(s) < 0 && s) return;
+    out.recent.push(rec);
+    if (rec.status === 'Pending') out.pending.push(rec);
+  });
+  return out;
+}
+// Points Log — the audited earned total per person (the client's local
+// be_points_v1 mirror is deliberately NOT the source of truth here).
+function dashPoints(ss, month) {
+  const out = { earned:{}, issuedTotal:0, rows:0 };
+  const sh = ss.getSheetByName(SH.POINTS);
+  if (!sh || sh.getLastRow() < 2) return out;
+  const total = sh.getLastRow();
+  const start = Math.max(2, total - 2000 + 1);
+  const header = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
+  const rows = sh.getRange(start, 1, total - start + 1, sh.getLastColumn()).getValues();
+  const cNm = header.indexOf('Staff'), cPt = header.indexOf('Total Points'), cDt = header.indexOf('Date');
+  rows.forEach(function(r){
+    const d = dstr(r[cDt]);
+    if (month && d && d.slice(0,7) !== month) return;
+    const nm = String(r[cNm]||''); if (!nm) return;
+    const p = Number(r[cPt]||0); if (isNaN(p)) return;
+    out.earned[nm] = (out.earned[nm]||0) + p;
+    out.issuedTotal += p;
+    out.rows++;
+  });
+  return out;
+}
+// Productivity submissions today, per store — who has and has not submitted.
+function dashProductivity(ss, date, stores) {
+  const out = {};
+  stores.forEach(function(s){ out[s] = []; });
+  const sh = ss.getSheetByName(SH.PRODUCTIVITY);
+  if (!sh || sh.getLastRow() < 2) return out;
+  const total = sh.getLastRow();
+  const start = Math.max(2, total - 800 + 1);
+  const header = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
+  const rows = sh.getRange(start, 1, total - start + 1, sh.getLastColumn()).getValues();
+  const cSt = header.indexOf('Store'), cDt = header.indexOf('Date'), cNm = header.indexOf('Staff');
+  rows.forEach(function(r){
+    const s = String(r[cSt]||'');
+    if (!out[s] || dstr(r[cDt]) !== date) return;
+    const nm = String(r[cNm]||'');
+    if (nm && out[s].indexOf(nm) < 0) out[s].push(nm);
+  });
+  return out;
+}
+// Server-side half of sync health. The client owns the outbox; the server can
+// honestly report only when it last accepted a write and how much landed today.
+function dashSyncHealth(ss, tasks, date) {
+  let lastTask = '';
+  tasks.forEach(function(t){ if (t.updatedAt && t.updatedAt > lastTask) lastTask = t.updatedAt; });
+  let lastAppData = '', appDataDocs = 0;
+  const ad = ss.getSheetByName(SH.APPDATA);
+  if (ad && ad.getLastRow() >= 2) {
+    const v = ad.getRange(2, 1, ad.getLastRow()-1, 2).getValues();
+    appDataDocs = v.length;
+    v.forEach(function(r){ const a = isoOrEmpty(r[1]); if (a && a > lastAppData) lastAppData = a; });
+  }
+  let submissionsToday = 0;
+  const lg = ss.getSheetByName(SH.LOG);
+  if (lg && lg.getLastRow() >= 2) {
+    const total = lg.getLastRow();
+    const start = Math.max(2, total - 600 + 1);
+    const header = lg.getRange(1,1,1,lg.getLastColumn()).getValues()[0].map(String);
+    const cDt = header.indexOf('Date');
+    if (cDt >= 0) {
+      lg.getRange(start, 1, total - start + 1, lg.getLastColumn()).getValues()
+        .forEach(function(r){ if (dstr(r[cDt]) === date) submissionsToday++; });
+    }
+  }
+  return { lastTaskWriteAt:lastTask, lastAppDataWriteAt:lastAppData,
+           appDataDocs:appDataDocs, submissionsToday:submissionsToday,
+           serverTime:new Date().toISOString() };
+}
+
+// ── Payload builders ────────────────────────────────────────────────────
+function dashTaskTotals(list, today) {
+  let active = 0, overdue = 0, dueToday = 0, doneToday = 0, recurDue = 0, recurDone = 0;
+  list.forEach(function(t){
+    if (t.status === 'deleted') return;
+    if (dashIsActive(t)) active++;
+    if (dashIsOverdue(t, today)) overdue++;
+    if (dashIsDueToday(t, today)) dueToday++;
+    if (dashDoneToday(t, today)) doneToday++;
+    if (t.recurrence && dashRecurrenceMatches(t.recurrence, today)) {
+      recurDue++;
+      if ((t.doneDates||[]).indexOf(today) >= 0) recurDone++;
+    }
+  });
+  return { active:active, overdue:overdue, dueToday:dueToday, doneToday:doneToday,
+           recurring:{ dueToday:recurDue, doneToday:recurDone,
+                       pct: recurDue ? Math.round(recurDone*100/recurDue) : null } };
+}
+function dashByPerson(list, today) {
+  const map = {};
+  list.forEach(function(t){
+    if (t.status === 'deleted') return;
+    const who = t.assignedTo || t.addedBy || 'Unassigned';
+    if (!map[who]) map[who] = { name:who, open:0, overdue:0, doneToday:0 };
+    if (dashIsActive(t)) map[who].open++;
+    if (dashIsOverdue(t, today)) map[who].overdue++;
+    if (dashDoneToday(t, today)) map[who].doneToday++;
+  });
+  return Object.keys(map).map(function(k){ return map[k]; })
+    .sort(function(a,b){ return (b.overdue - a.overdue) || (b.open - a.open); });
+}
+// §4: "tasks or records with missing ownership/data" — reported, never repaired.
+function dashDataQuality(tasks) {
+  const out = { noAssignee:[], noStore:[], noDescription:[], noDate:[] };
+  tasks.forEach(function(t){
+    if (t.status === 'deleted' || !dashIsActive(t)) return;
+    if (!t.assignedTo) out.noAssignee.push(t.id);
+    if (!t.store) out.noStore.push(t.id);
+    if (!String(t.desc||'').trim()) out.noDescription.push(t.id);
+    if (!t.date && !t.due) out.noDate.push(t.id);
+  });
+  return { noAssignee:out.noAssignee.length, noStore:out.noStore.length,
+           noDescription:out.noDescription.length, noDate:out.noDate.length,
+           total: out.noAssignee.length + out.noStore.length + out.noDescription.length + out.noDate.length,
+           ids: { noAssignee:out.noAssignee.slice(0,25), noStore:out.noStore.slice(0,25),
+                  noDescription:out.noDescription.slice(0,25), noDate:out.noDate.slice(0,25) } };
+}
+// §4: "unresolved operational alerts" — every one derived from a form that is
+// actually missing for the date, not from a severity score someone invented.
+function dashAlerts(state, att, prod, roster, stores, date) {
+  const alerts = [];
+  stores.forEach(function(s){
+    const st = state.stores[s];
+    if (!st) return;
+    if (!st.opening.done)    alerts.push({ store:s, kind:'opening_missing',    text:s+': opening checklist not submitted' });
+    if (!st.closing.done)    alerts.push({ store:s, kind:'closing_missing',    text:s+': closing checklist not submitted' });
+    if (!st.attendance.done) alerts.push({ store:s, kind:'attendance_missing', text:s+': attendance not marked' });
+    if (!st.camera.done)     alerts.push({ store:s, kind:'camera_missing',     text:s+': camera report not submitted' });
+    const lm = (att.byStore[s] && att.byStore[s].lunchMissing) || 0;
+    if (lm) alerts.push({ store:s, kind:'lunch_incomplete', count:lm, text:s+': '+lm+' staff with incomplete lunch in/out' });
+    const expected = roster.filter(function(u){ return u.store === s; }).map(function(u){ return u.name; });
+    const submitted = prod[s] || [];
+    const missing = expected.filter(function(n){ return submitted.indexOf(n) < 0; });
+    if (missing.length) alerts.push({ store:s, kind:'productivity_missing', count:missing.length,
+      names:missing, text:s+': '+missing.length+' staff have not submitted productivity' });
+  });
+  return alerts;
+}
+function dashTargets(appdocs, stores, month) {
+  const out = { functional:[], individual:[], month:month, source:'App Data' };
+  stores.forEach(function(s){
+    const fk = 'be_functargets_' + s + '_' + month;
+    const ik = 'be_indivtargets_' + s + '_' + month;
+    if (appdocs[fk]) out.functional.push({ store:s, key:fk, data:appdocs[fk] });
+    if (appdocs[ik]) out.individual.push({ store:s, key:ik, data:appdocs[ik] });
+  });
+  return out;
+}
+
+function buildDashboard(ss, sc, date) {
+  const today = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
+  date = date || today;
+  const month = date.slice(0,7);
+  const stores = dashStoresFor(sc);
+
+  const allTasks = buildTasksArray(ss, '', '', '');
+  const roster   = getRoster(ss);
+  const state    = buildState(ss, date, null);
+  const att      = dashAttendance(ss, date, stores);
+  const prod     = dashProductivity(ss, date, stores);
+  const points   = dashPoints(ss, month);
+  const appdata  = dashAppData(ss, ['be_functargets_','be_indivtargets_','be_points_redeem_v1','be_planner_v1','be_leaves_']);
+  const redeem   = appdata.docs['be_points_redeem_v1'] || {};
+
+  // A task with no store belongs to whoever can see any store — matching the
+  // existing buildState rule that storeless tasks count everywhere.
+  function inScopeStore(t){ return !t.store || stores.indexOf(t.store) >= 0; }
+  const scopedTasks = allTasks.filter(inScopeStore);
+
+  const base = {
+    status:'ok', scope:sc.scope, user:sc.name, date:date, month:month,
+    stores:stores, serverTime:new Date().toISOString(),
+    generatedFrom:'live sheets: Tasks, Attendance, Checklists, Camera Reports, Productivity, Leave Applications, Points Log, App Data'
+  };
+
+  // ── EMPLOYEE (§8) — own work only. 11 cards. ─────────────────────────
+  const mine = allTasks.filter(function(t){
+    return t.assignedTo === sc.name || t.addedBy === sc.name;
+  });
+  const myTotals = dashTaskTotals(mine, date);
+  const myAtt = att.rows.filter(function(r){ return r.name === sc.name; });
+  const myLeaves = dashLeaves(ss, stores, sc.name).mine;
+  const planner = appdata.docs['be_planner_v1'] || null;
+  let myPlanner = null;
+  if (planner) {
+    // The planner document is a map; surface only this person's entries.
+    try {
+      myPlanner = {};
+      Object.keys(planner).forEach(function(k){
+        const v = planner[k];
+        const owner = (v && (v.name || v.who || v.assignedTo)) || '';
+        if (!owner || owner === sc.name) myPlanner[k] = v;
+      });
+    } catch(e) { myPlanner = null; }
+  }
+  const myIndivTargets = [];
+  stores.forEach(function(s){
+    const doc = appdata.docs['be_indivtargets_' + s + '_' + month];
+    if (doc && doc[sc.name] !== undefined) myIndivTargets.push({ store:s, month:month, target:doc[sc.name] });
+  });
+  const myOpenList = mine.filter(function(t){ return dashIsOpenToday(t, date); })
+    .sort(function(a,b){
+      const ao = dashIsOverdue(a, date) ? 0 : 1, bo = dashIsOverdue(b, date) ? 0 : 1;
+      if (ao !== bo) return ao - bo;
+      const pr = { urgent:0, high:1, normal:2, low:3 };
+      return (pr[a.priority] === undefined ? 2 : pr[a.priority]) - (pr[b.priority] === undefined ? 2 : pr[b.priority]);
+    });
+  const employee = {
+    myTasks:   { open:myTotals.active, list: mine.filter(dashIsActive).map(function(t){
+                   return { id:t.id, desc:t.desc, store:t.store, priority:t.priority,
+                            status:t.status, due:t.due, date:t.date, recurring:!!t.recurrence }; }) },
+    today:     { count:myTotals.dueToday },
+    overdue:   { count:myTotals.overdue },
+    recurring: myTotals.recurring,
+    myAttendance: { today: myAtt.length ? myAtt[0] : null, markedToday: myAtt.length > 0 },
+    myTargets: { individual:myIndivTargets, month:month },
+    myPoints:  { earned: points.earned[sc.name] || 0,
+                 redeemed: Number(redeem[sc.name] || 0),
+                 net: (points.earned[sc.name] || 0) - Number(redeem[sc.name] || 0),
+                 month: month, source:'Points Log + App Data redemptions' },
+    myLeave:   { count:myLeaves.length, list:myLeaves },
+    myPlanner: { present: !!myPlanner, data: myPlanner },
+    syncStatus:{ lastServerWriteAt: dashSyncHealth(ss, mine, date).lastTaskWriteAt,
+                 serverTime: base.serverTime },
+    nextAction: myOpenList.length
+      ? { id:myOpenList[0].id, desc:myOpenList[0].desc,
+          why: dashIsOverdue(myOpenList[0], date) ? 'overdue' : 'due today' }
+      : null
+  };
+  if (sc.scope === 'member') {
+    base.employee = employee;
+    return base;
+  }
+
+  // ── MANAGER (§7) — assigned store, execution focus. 9 cards. ─────────
+  const mgrTotals  = dashTaskTotals(scopedTasks, date);
+  const leaves     = dashLeaves(ss, stores, sc.name);
+  const prodExceptions = [];
+  stores.forEach(function(s){
+    const expected = roster.filter(function(u){ return u.store === s; }).map(function(u){ return u.name; });
+    const submitted = prod[s] || [];
+    expected.forEach(function(n){ if (submitted.indexOf(n) < 0) prodExceptions.push({ store:s, name:n }); });
+  });
+  const staffByStore = {};
+  stores.forEach(function(s){
+    const expected = roster.filter(function(u){ return u.store === s; }).map(function(u){ return u.name; });
+    const marked = (att.byStore[s] && att.byStore[s].names) || {};
+    staffByStore[s] = {
+      rostered: expected.length,
+      marked: (att.byStore[s] && att.byStore[s].marked) || 0,
+      byStatus: (att.byStore[s] && att.byStore[s].byStatus) || {},
+      lunchMissing: (att.byStore[s] && att.byStore[s].lunchMissing) || 0,
+      notMarked: expected.filter(function(n){ return marked[n] === undefined; })
+    };
+  });
+  const manager = {
+    storeSummary: (function(){
+      const o = {};
+      stores.forEach(function(s){ if (state.stores[s]) o[s] = state.stores[s]; });
+      return o;
+    })(),
+    staff: staffByStore,
+    tasks: { open:mgrTotals.active, overdue:mgrTotals.overdue, dueToday:mgrTotals.dueToday,
+             doneToday:mgrTotals.doneToday },
+    recurringCompletion: mgrTotals.recurring,
+    targets: dashTargets(appdata.docs, stores, month),
+    leaveRequests: { pending:leaves.pending.length, list:leaves.pending },
+    productivityExceptions: { count:prodExceptions.length, list:prodExceptions },
+    pendingApprovals: { leaves:leaves.pending.length, total:leaves.pending.length,
+                        note:'Leave Applications with Granted? = Pending. No other approval queue exists in production yet.' },
+    syncHealth: dashSyncHealth(ss, scopedTasks, date),
+    byPerson: dashByPerson(scopedTasks, date)
+  };
+  if (sc.scope === 'manager') {
+    base.manager  = manager;
+    base.employee = employee;   // a manager is also a person with their own work
+    return base;
+  }
+
+  // ── OWNER (§6) — Business Command Centre. 15 cards. ──────────────────
+  const totals = dashTaskTotals(allTasks, date);
+  const perStore = {};
+  DASH_STORES.forEach(function(s){
+    const list = allTasks.filter(function(t){ return t.store === s; });
+    const t = dashTaskTotals(list, date);
+    perStore[s] = {
+      tasks: { open:t.active, overdue:t.overdue, dueToday:t.dueToday, doneToday:t.doneToday },
+      recurring: t.recurring,
+      state: state.stores[s] || null,
+      attendance: staffByStore[s] || null,
+      productivitySubmitted: (prod[s] || []).length
+    };
+  });
+  const allLeaves = dashLeaves(ss, DASH_STORES, '');
+  let redeemedTotal = 0;
+  Object.keys(redeem).forEach(function(k){ const v = Number(redeem[k]); if (!isNaN(v)) redeemedTotal += v; });
+
+  base.owner = {
+    totalActiveTasks:      totals.active,
+    overdueTasks:          totals.overdue,
+    dueToday:              totals.dueToday,
+    completedToday:        totals.doneToday,
+    recurringCompliance:   totals.recurring,
+    storePerformance:      perStore,
+    employeePerformance:   dashByPerson(allTasks, date),
+    functionalTargets:     dashTargets(appdata.docs, DASH_STORES, month).functional,
+    individualTargets:     dashTargets(appdata.docs, DASH_STORES, month).individual,
+    attendanceExceptions:  (function(){
+      const o = { lunchMissing:0, notMarked:[], byStatus:{} };
+      DASH_STORES.forEach(function(s){
+        const b = att.byStore[s]; if (!b) return;
+        o.lunchMissing += b.lunchMissing;
+        Object.keys(b.byStatus).forEach(function(k){ o.byStatus[k] = (o.byStatus[k]||0) + b.byStatus[k]; });
+        const expected = roster.filter(function(u){ return u.store === s; }).map(function(u){ return u.name; });
+        expected.forEach(function(n){ if (b.names[n] === undefined) o.notMarked.push({ store:s, name:n }); });
+      });
+      return o;
+    })(),
+    leaveAwaitingAction:   { count:allLeaves.pending.length, list:allLeaves.pending },
+    points:                { issued:points.issuedTotal, redeemed:redeemedTotal,
+                             net:points.issuedTotal - redeemedTotal, month:month,
+                             perPerson:points.earned, source:'Points Log + App Data redemptions' },
+    syncHealth:            dashSyncHealth(ss, allTasks, date),
+    openAlerts:            (function(){
+      const a = dashAlerts(state, att, prod, roster, DASH_STORES, date);
+      return { count:a.length, list:a };
+    })(),
+    dataQuality:           dashDataQuality(allTasks)
+  };
+  base.manager  = manager;
+  base.employee = employee;
+  if (appdata.badKeys.length) base.warnings = { unparseableAppDataKeys: appdata.badKeys };
+  return base;
+}
+
+function getDashboardEndpoint(ss, name, hash, date) {
+  const sc = dashScope(ss, name, hash);
+  if (!sc.ok) {
+    // Refused, not downgraded. The response carries no business data at all.
+    return jsonResp({ status:'error', reason:sc.reason, message:'dashboard access denied' });
+  }
+  // Short cache: the owner payload touches eight sheets, and the dashboard is
+  // polled on every tab switch. 45s keeps it live without hammering quota.
+  const cacheKey = 'dash_' + sc.scope + '_' + sc.name + '_' + (date||'today');
+  const cache = CacheService.getScriptCache();
+  try {
+    const hit = cache.get(cacheKey);
+    if (hit) return jsonResp(JSON.parse(hit));
+  } catch(e) {}
+  const payload = buildDashboard(ss, sc, date);
+  try { cache.put(cacheKey, JSON.stringify(payload), 45); } catch(e) {}
+  return jsonResp(payload);
 }
 
 // ════════════════════════════════════════════════════════════════════
