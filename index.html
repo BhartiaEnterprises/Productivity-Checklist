@@ -1078,7 +1078,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
     <div class="pin-sub hi" data-hi="रिपोर्ट देखने के लिए PIN डालें" data-en="Enter PIN to view reports">रिपोर्ट देखने के लिए PIN डालें</div>
     <input class="pin-input" type="password" id="pin-input" maxlength="4" placeholder="••••" oninput="pinCheck(this.value)">
     <div class="pin-error" id="pin-error"></div>
-    <div style="font-size:11px;color:#bbb;margin-top:16px">Default PIN: 1234 — change in SETUP_GUIDE.md</div>
   </div>
   <!-- REPORTS SCREEN -->
   <div class="reports-screen" id="reports-screen">
@@ -1312,7 +1311,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
         <optgroup label="VKS">
           <option>Kundan</option><option>Aakash</option><option>Akbar</option>
         </optgroup>
-        <option value="Owner">Owner (Neel)</option>
+        <option value="Neel (Owner)">Owner (Neel)</option>
       </select>
     </div>
     <div id="my-task-list"></div>
@@ -1352,7 +1351,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
         <label class="hi" data-hi="किसको सौंपा" data-en="Assign To">किसको सौंपा</label>
         <select id="task-assign-input" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff">
           <option value="Manager">Manager (खुद)</option>
-          <option value="Owner (Neel)">Owner (Neel)</option>
+          <option value="Neel (Owner)">Owner (Neel)</option>
           <optgroup label="BC Staff" id="modal-bc-opts">
             <option>Ramu</option><option>Abhishek</option><option>Sikander</option>
             <option>Bijay</option><option>Kesri</option><option>Krishna</option>
@@ -1438,7 +1437,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
         <option>Ramu</option><option>Abhishek</option><option>Sikander</option>
         <option>Bijay</option><option>Kesri</option><option>Krishna</option>
         <option>Kundan</option><option>Aakash</option><option>Akbar</option>
-        <option value="Owner (Neel)">Owner (Neel)</option>
+        <option value="Neel (Owner)">Owner (Neel)</option>
       </select>
     </div>
     <div style="display:flex;gap:10px">
@@ -1834,7 +1833,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
 // CONFIG — REPLACE AFTER DEPLOYING APPS SCRIPT
 // ══════════════════════════════════════════════════════
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzNVv8qwdqysoQDCyWB_9Q1Ksc14-nNjSapWOH9Rzi10LWPYPpYIu48I_add1At8fT-/exec';
-const OWNER_PIN  = '1234'; // Change this to your preferred PIN
+// Phase 5.0 (Bug #8): the plaintext owner PIN used to live here, in a PUBLIC repo,
+// and was even printed on the Reports screen. Access is now decided by the
+// session the user already authenticated in Phase 2 (Users sheet + SHA-256),
+// and the owner-reset key is verified SERVER-SIDE against OWNER_KEY_HASH.
 // ══════════════════════════════════════════════════════
 // DATA CONSTANTS
 // ══════════════════════════════════════════════════════
@@ -1963,7 +1965,9 @@ function switchTab(tab){
     try{ if(tab==='checklist')    prefillChecklistFromLogin(); }catch(e){}
     try{ if(tab==='reports')      initReports();         }catch(e){console.warn('initReports:',e);}
     try{ if(tab==='planner')      renderPlanner();       }catch(e){console.warn('planner:',e);}
-    try{ if(tab==='tasks'){ carryForwardTasks(); renderMyTasks(); updateTaskCounts(); }}catch(e){console.warn('tasks:',e);}
+    try{ if(tab==='tasks'){ carryForwardTasks(); renderMyTasks(); updateTaskCounts();
+      // Phase 5.0: pull the team's tasks down before the user acts on a stale list
+      try{ pullTasksFromServer(); }catch(e){} }}catch(e){console.warn('tasks:',e);}
     try{ if(tab==='camera')       initCamera();          }catch(e){console.warn('initCamera:',e);}
     try{ if(tab==='productivity'){ prodLoadEmployees(); var sd=document.getElementById('sme-date'); if(sd&&!sd.value) sd.value=todayStr2(); var bd=document.getElementById('be-date'); if(bd&&!bd.value) bd.value=todayStr2(); applyProdSubTabScope(); } }catch(e){console.warn('productivity:',e);}
     try{ if(tab==='analytics')    renderAnalytics();     }catch(e){console.warn('renderAnalytics:',e);}
@@ -2532,13 +2536,25 @@ function attReset(){
 // REPORTS TAB
 // ══════════════════════════════════════════════════════
 let pinUnlocked=false;
+function unlockReports(){
+  pinUnlocked = true;
+  var ps=document.getElementById('pin-screen'); if(ps) ps.style.display='none';
+  var rs=document.getElementById('reports-screen'); if(rs) rs.style.display='block';
+  loadReports();
+}
 function initReports(){
-  if(pinUnlocked){document.getElementById('pin-screen').style.display='none';document.getElementById('reports-screen').style.display='block';loadReports();}
+  // Phase 5.0 (Bug #8): the Reports tab is already role-gated (only Manager/PC/Owner
+  // have 'reports' in their ALL_ROLES tab list) and the user already authenticated at
+  // login. The legacy hardcoded '1234' gate added no security — it only leaked a PIN.
+  if(pinUnlocked || (typeof CURRENT_USER!=='undefined' && CURRENT_USER)){ unlockReports(); return; }
 }
 function pinCheck(val){
-  if(val.length<4)return;
-  if(val===OWNER_PIN){pinUnlocked=true;document.getElementById('pin-screen').style.display='none';document.getElementById('reports-screen').style.display='block';loadReports();}
-  else{document.getElementById('pin-error').textContent=lang==='hi'?'❌ गलत PIN':'❌ Wrong PIN';document.getElementById('pin-input').value='';}
+  // Retained only for a session-less fallback; there is no hardcoded PIN to match now.
+  if(val.length<4) return;
+  if(typeof CURRENT_USER!=='undefined' && CURRENT_USER){ unlockReports(); return; }
+  document.getElementById('pin-error').textContent = lang==='hi'
+    ? '❌ पहले लॉगिन करें' : '❌ Please log in first';
+  document.getElementById('pin-input').value='';
 }
 async function loadReports(){
   const listEl=document.getElementById('rep-list');
@@ -2655,7 +2671,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.3-phase4a';
+var APP_VERSION = '7.4-phase5.0';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -3062,6 +3078,79 @@ function doTaskSync(){
     });
   }catch(e){ console.warn('task sync:', e); }
 }
+// ══ PHASE 5.0 — TASK PULL: server → this device ════════════════════════
+// Bug #1 was the single most damaging defect in the audit: task sync only ever
+// pushed. Tasks lived on one phone. Change device, clear the browser, or log in
+// as Owner and the company's work simply was not there.
+// Merge rule: last-write-wins on updatedAt, with the LOCAL copy winning ties, so
+// a change made offline seconds ago is never clobbered by a stale server row.
+// Tombstones (status 'deleted') always win — a delete must not resurrect.
+var TASK_PULL_TS_KEY = 'be_tasks_pulled_at_v1';
+var _taskPullBusy = false;
+function pullTasksFromServer(opts){
+  opts = opts || {};
+  return new Promise(function(resolve){
+    if(_taskPullBusy){ resolve(false); return; }
+    if(typeof SCRIPT_URL!=='string' || SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){ resolve(false); return; }
+    _taskPullBusy = true;
+    var url = SCRIPT_URL+'?action=getTasks&_ts='+Date.now();
+    // Incremental by default — full sweep only when explicitly asked (first run / manual refresh)
+    var since = opts.full ? '' : (localStorage.getItem(TASK_PULL_TS_KEY)||'');
+    if(since) url += '&since='+encodeURIComponent(since);
+    var ctrl = null, timer = null;
+    try{ ctrl = new AbortController(); timer = setTimeout(function(){ try{ctrl.abort();}catch(e){} }, 20000); }catch(e){}
+    fetch(url, {method:'GET', redirect:'follow', signal: ctrl?ctrl.signal:undefined})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        try{ clearTimeout(timer); }catch(e){}
+        _taskPullBusy = false;
+        if(!j || j.status!=='ok' || !j.tasks){ resolve(false); return; }
+        var changed = mergeServerTasks(j.tasks);
+        if(j.serverTime) localStorage.setItem(TASK_PULL_TS_KEY, j.serverTime);
+        try{ localStorage.setItem('be_last_sync_v1', new Date().toISOString()); }catch(e){}
+        if(changed) refreshTaskViews();
+        resolve(changed);
+      })
+      .catch(function(){ try{ clearTimeout(timer); }catch(e){} _taskPullBusy = false; resolve(false); });
+  });
+}
+function mergeServerTasks(serverTasks){
+  var local = loadTasks();
+  var byId = {}, i;
+  for(i=0;i<local.length;i++) byId[String(local[i].id)] = local[i];
+  var pendingDeletes = loadDeletedTaskIds();
+  var changed = false;
+  serverTasks.forEach(function(st){
+    if(!st || !st.id) return;
+    var id = String(st.id);
+    // A delete this device has queued but not yet pushed must not be undone by the pull
+    if(pendingDeletes.indexOf(id) >= 0) return;
+    if(st.status === 'deleted'){
+      if(byId[id]){ delete byId[id]; changed = true; }
+      return;
+    }
+    var lo = byId[id];
+    if(!lo){ byId[id] = st; changed = true; return; }
+    var loT = Date.parse(lo.updatedAt || lo.doneAt || lo.createdAt || '') || 0;
+    var stT = Date.parse(st.updatedAt || '') || 0;
+    if(stT > loT){ byId[id] = st; changed = true; }   // strictly newer server row wins
+  });
+  if(!changed) return false;
+  var merged = [];
+  for(var k in byId){ if(Object.prototype.hasOwnProperty.call(byId,k)) merged.push(byId[k]); }
+  // Write straight to storage — saveTasks() would schedule a push and ping-pong the merge
+  try{ localStorage.setItem(TASK_KEY, JSON.stringify(merged)); }catch(e){ return false; }
+  return true;
+}
+function refreshTaskViews(){
+  try{ if(document.getElementById('tab-tasks') && document.getElementById('tab-tasks').classList.contains('active')){
+    renderMyTasks();
+    var ov = document.getElementById('task-view-owner');
+    if(ov && ov.style.display!=='none') renderOwnerTasks();
+  } }catch(e){}
+  try{ updateTaskCounts(); }catch(e){}
+  try{ var w=document.getElementById('cmd-mytasks-card'); if(w) renderMyTasksTodayWidget(w); }catch(e){}
+}
 // ── PHASE 1: SERVER STATE (filled vs pending, per store per date) ──
 function fetchServerState(date){
   return new Promise(function(resolve){
@@ -3148,6 +3237,9 @@ function isTaskOpenToday(t, today){
 function addTaskHistory(t, action, detail){
   t.history = (t.history||[]).slice();
   t.history.push({at:new Date().toISOString(), by:(CURRENT_USER?CURRENT_USER.name:'—'), action:action, detail:detail||''});
+  // Phase 5.0: every mutation goes through here, so this is the one honest place to
+  // stamp updatedAt. The server→client merge needs it to decide last-write-wins.
+  t.updatedAt = new Date().toISOString();
   return t.history;
 }
 function renderTaskHistory(id){
@@ -3172,9 +3264,13 @@ function carryForwardTasks(){
     if(t.recurrence) return t;
     // If task is pending and due date is in the past — mark as carried
     if(isOpenStatus(t.status) && t.date !== today && !t.carried){
+      const from = t.date;
       t.carried = true;
-      t.carriedFrom = t.date;
+      t.carriedFrom = from;
       t.date = today; // move to today
+      // Phase 5.0 fix (Bug #7): carry-forward used to mutate the task silently.
+      // Every mutation must leave an audit trail (§2.3).
+      try{ addTaskHistory(t, 'carry_forward', (from||'?')+' → '+today); }catch(e){}
       changed = true;
     }
     return t;
@@ -3206,7 +3302,11 @@ function populateOwnerMgrFilter(){
 }
 // ── RENDER MY TASKS ──
 function renderMyTasks(){
-  const who = document.getElementById('task-whoami')?.value || '';
+  // Phase 5.0 fix (Bug #5): "My Tasks" used to default to '' = everyone's tasks.
+  // The logged-in user is the source of truth; the dropdown is only a manager/owner convenience.
+  const _sel = document.getElementById('task-whoami');
+  let who = _sel ? _sel.value : '';
+  if(CURRENT_USER && (!can('viewAllTasks') || !who)) who = CURRENT_USER.name;
   const today = todayStr2();
   const all = loadTasks();
   // One-off tasks: same rule as before (created today, carried, or due on/before today, or done today)
@@ -3373,6 +3473,13 @@ function renderTaskCard(t, view){
 function toggleTaskDone(id){
   let tasks = loadTasks();
   const today = todayStr2();
+  // Phase 5.0 fix (Bug #4): this was the only task action with no permission guard.
+  // A member could tick/untick anyone's task. Same rule as setTaskStatus/editTaskDue.
+  const _t0 = tasks.filter(x=>x.id===id)[0];
+  if(_t0 && !isOwnTask(_t0) && !can('editAnyTask')){
+    toast(lang==='hi'?'⛔ सिर्फ अपना टास्क पूरा कर सकते हैं':'⛔ You can only complete your own tasks');
+    return;
+  }
   tasks = tasks.map(t => {
     if(t.id!==id) return t;
     if(t.recurrence){
@@ -3438,7 +3545,7 @@ function editTaskDue(id){
 }
 function reassignTask(id){
   if(!can('reassignTask')){ toast(lang==='hi'?'⛔ सिर्फ Manager/Owner दोबारा सौंप सकते हैं':'⛔ Only Manager/Owner can reassign tasks'); return; }
-  const allPeople=['Manager','Owner (Neel)',...TEAMS.BC,...TEAMS.VKS];
+  const allPeople=['Manager','Neel (Owner)',...TEAMS.BC,...TEAMS.VKS];
   const choice=prompt(`${lang==='hi'?'किसको सौंपें? नाम लिखें:':'Reassign to? Type name:'} (${allPeople.join(', ')})`);
   if(!choice||!choice.trim()) return;
   let tasks=loadTasks();
@@ -3559,7 +3666,8 @@ function renderMyTasksTodayWidget(container){
   const myName = CURRENT_USER.name;
   const all = loadTasks();
   const mine = all.filter(function(t){
-    if(t.assignedTo!==myName && t.addedBy!==myName) return false;
+    // Phase 5.0 (Bug #6): alias-aware match, so "Owner (Neel)" matches "Neel (Owner)"
+    if(!sameUser(t.assignedTo, myName) && !sameUser(t.addedBy, myName)) return false;
     return isTaskOpenToday(t, today);
   });
   const overdueCount = mine.filter(function(t){
@@ -5603,13 +5711,11 @@ function downloadSummaryPDF(){
 // ══════════════════════════════════════════════════════════════
 // FEATURE: EDIT MODE (PIN-protected)
 // ══════════════════════════════════════════════════════════════
-var EDIT_PIN = '1234';  // same as owner PIN — change if needed
 function openEditMode(){
-  var pin = prompt(lang==='hi'
-    ? 'Edit Mode के लिए PIN डालें:'
-    : 'Enter PIN to edit this submission:', '');
-  if(pin !== EDIT_PIN && pin !== OWNER_PIN){
-    toast(lang==='hi'?'❌ गलत PIN — Edit नहीं होगा':'❌ Wrong PIN — cannot edit'); return;
+  // Phase 5.0 (Bug #8): was gated on a hardcoded '1234' committed to a public repo.
+  // Editing a submitted checklist is a Manager/Owner action — use the real RBAC matrix.
+  if(!can('editAnyTask')){
+    toast(lang==='hi'?'⛔ सिर्फ Manager/Owner edit कर सकते हैं':'⛔ Only Manager/Owner can edit a submission'); return;
   }
   // Show edit banner
   var body = document.getElementById('cl-checklist-body');
@@ -6462,16 +6568,43 @@ var PERMISSIONS = {
   toggleWAAutomation:  ['owner'],
   resetOthersPin:      ['owner'],
   approveInventoryOffer:['owner'],
-  viewTaskHistory:     ['owner','manager']
+  viewTaskHistory:     ['owner','manager'],
+  // Phase 5.0: browsing another person's task list is a manager/owner action.
+  // A Team Member's "My Tasks" is now hard-bound to their own session.
+  viewAllTasks:        ['owner','manager']
 };
 function can(action){
   if(!CURRENT_USER) return false;
   var lvl = CURRENT_USER.level || getAccessLevel(CURRENT_USER.roles);
   return PERMISSIONS[action] && PERMISSIONS[action].indexOf(lvl) >= 0;
 }
+// ── Phase 5.0 fix (Bug #6): ONE canonical name per person ────────────────
+// The app grew three spellings for the same human: the Users-sheet/session name
+// "Neel (Owner)", the assign-dropdown value "Owner (Neel)", and the whoami value
+// "Owner". Result: the Owner's own tasks never matched his session, so "My Tasks
+// Today" read (0) while tasks were assigned to him.
+// We do NOT rewrite stored rows (§3: preserve old IDs / never lose history) —
+// we normalise on COMPARISON, so old and new data both match. New writes use the
+// canonical form, so the aliases die out naturally.
+var NAME_ALIASES = {
+  'owner'      : 'Neel (Owner)',
+  'neel'       : 'Neel (Owner)',
+  'ownerneel'  : 'Neel (Owner)',
+  'neelowner'  : 'Neel (Owner)'
+};
+function canonName(s){
+  s = String(s==null?'':s).trim();
+  if(!s) return '';
+  var key = s.toLowerCase().replace(/[\s().\-_]/g,'');
+  return NAME_ALIASES[key] || s;
+}
+function sameUser(a,b){
+  a = canonName(a); b = canonName(b);
+  return !!a && a === b;
+}
 function isOwnTask(t){
   if(!CURRENT_USER) return false;
-  return t && (t.assignedTo===CURRENT_USER.name || t.addedBy===CURRENT_USER.name);
+  return !!t && (sameUser(t.assignedTo, CURRENT_USER.name) || sameUser(t.addedBy, CURRENT_USER.name));
 }
 var _loginSelName=null, _loginSelStore=null, _loginSelRoles=[];
 function initLogin(){
@@ -6647,8 +6780,9 @@ function pinSubmit(){
 }
 function pinOwnerReset(){
   var op=prompt(lang==='hi'?'Owner PIN डालें:':'Enter Owner PIN:');
-  if(op===null) return;
-  if(op!==OWNER_PIN){ toast('❌ '+(lang==='hi'?'गलत Owner PIN':'Wrong Owner PIN')); return; }
+  if(op===null || !op) return;
+  // Phase 5.0 (Bug #8): no client-side plaintext compare. The server validates
+  // sha256('BEOWNER|'+pin) against OWNER_KEY_HASH and rejects a wrong key.
   sha256Hex('BEOWNER|'+op).then(function(ok){
     sendToSheets({ type_:'set_pin', name:_loginSelName, newHash:'', ownerKey:ok, submittedAt:new Date().toISOString() })
     .then(function(){
@@ -6712,6 +6846,20 @@ function applyRoleVisibility(){
   // Switch to first allowed tab
   if(firstVisible) switchTab(firstVisible);
   try{ if(typeof refreshDashboard==='function') refreshDashboard(); }catch(e){}
+  // Phase 5.0 (Bug #1): on every login, pull the company's tasks onto THIS device.
+  // A first login on a new phone used to show an empty task list; now it shows the truth.
+  try{
+    var _firstPull = !localStorage.getItem(TASK_PULL_TS_KEY);
+    pullTasksFromServer({full:_firstPull});
+    if(!window._taskPullTimer){
+      // Light background refresh so a reassignment from another device shows up
+      // without the user doing anything. 3 min, incremental (?since=), tiny payload.
+      window._taskPullTimer = setInterval(function(){
+        if(document.hidden) return;                  // §19: no work while backgrounded
+        try{ pullTasksFromServer(); }catch(e){}
+      }, 180000);
+    }
+  }catch(e){}
 }
 // ══ PHASE 4: 3 ROLE-SPECIFIC DASHBOARD PERSONAS ═══════════════════════
 // Same single dashboard screen, but reshaped per access level:
@@ -6753,6 +6901,30 @@ function applyDashboardPersona(){
 // The "Owner View" (team-wide task view, with reassign/delete-others) is a manager/owner
 // permission — Team Members only ever see their own personal task list.
 function applyTaskViewPermissions(){
+  // Phase 5.0 fix (Bug #5): bind the "I am:" selector to the logged-in user.
+  // Members get it locked to themselves; managers/owners may still switch to inspect.
+  try{
+    var whoSel = document.getElementById('task-whoami');
+    if(whoSel && CURRENT_USER){
+      var me = CURRENT_USER.name;
+      var found = false, i;
+      for(i=0;i<whoSel.options.length;i++){
+        if(sameUser(whoSel.options[i].value || whoSel.options[i].text, me)){
+          whoSel.options[i].value = me; found = true; break;
+        }
+      }
+      if(!found){
+        var o = document.createElement('option');
+        o.value = me; o.textContent = me;
+        whoSel.appendChild(o);
+      }
+      whoSel.value = me;
+      var mayBrowse = can('viewAllTasks');
+      whoSel.disabled = !mayBrowse;
+      whoSel.style.opacity = mayBrowse ? '1' : '.6';
+      whoSel.title = mayBrowse ? '' : (lang==='hi'?'आप सिर्फ अपने टास्क देख सकते हैं':'You can only see your own tasks');
+    }
+  }catch(e){}
   var ownerBtn = document.getElementById('trb-owner');
   if(ownerBtn) ownerBtn.style.display = can('reassignTask') ? '' : 'none';
   var ownerView = document.getElementById('task-view-owner');
@@ -7747,7 +7919,7 @@ function adminRunAll(){
   test('FN: calcAvgValues no error',      ()=>{ calcAvgValues(); return true; });
   // Config
   test('CFG: SCRIPT_URL set',             ()=>SCRIPT_URL!=='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE');
-  test('CFG: OWNER_PIN set',              ()=>typeof OWNER_PIN==='string'&&OWNER_PIN.length>0);
+  test('SEC: no hardcoded PIN literal',   ()=>typeof OWNER_PIN==='undefined'&&typeof EDIT_PIN==='undefined');
   // Phase 4: RBAC + recurrence engine
   test('FN: getAccessLevel owner',        ()=>getAccessLevel(['Owner'])==='owner');
   test('FN: getAccessLevel manager',      ()=>getAccessLevel(['Manager'])==='manager');

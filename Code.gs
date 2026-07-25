@@ -75,6 +75,9 @@ function doPost(e) {
       case 'attendance':       handleAttendance(ss, d, now);      break;
       case 'camera':           handleCamera(ss, d, now);          break;
       case 'productivity':     handleProductivity(ss, d, now);    break;
+      // NOTE (Phase 5.0 audit): the frontend has not sent type_:'tasks' since Phase 1
+      // (superseded by 'task_sync'). Kept deliberately — §3 forbids breaking an endpoint,
+      // and an old offline outbox on someone's phone may still hold one of these.
       case 'tasks':            handleTasks(ss, d, now);           break;
       case 'social_exec':      handleSocialExec(ss, d, now);      break;
       case 'billing_exec':     handleBillingExec(ss, d, now);     break;
@@ -216,6 +219,18 @@ function doGet(e) {
     // Phase 2: today's checklist record for same-day edit prefill (cross-device)
     if (action === 'getChecklist') {
       return getChecklistRecord(ss, safeParam(e,'store'), safeParam(e,'date'), safeParam(e,'type'));
+    }
+
+    // ── Phase 5.0 (Bug #1): server → client task pull ────────────────────
+    // Until now task sync was one-way (client pushes, nothing comes back), so every
+    // employee's task list lived on exactly one device and the Owner could never see
+    // the company's real position. This is the read half.
+    //   ?action=getTasks              → all live tasks
+    //   ?action=getTasks&store=BC     → one store (plus storeless tasks)
+    //   ?action=getTasks&who=Kesri    → tasks assigned to / added by one person
+    //   ?action=getTasks&since=<ISO>  → only rows updated after <ISO> (cheap polling, §19)
+    if (action === 'getTasks') {
+      return getTasksEndpoint(ss, safeParam(e,'store'), safeParam(e,'who'), safeParam(e,'since'));
     }
 
     // Phase 0: read-back verification — did submission <cid> actually land?
@@ -1530,6 +1545,50 @@ function handleTaskSync(ss, d, now) {
     if (r) { sheet.getRange(r, 8).setValue('deleted'); sheet.getRange(r, 14).setValue(now); }
   });
 }
+// ══════════════════════════════════════════════════════════════════════
+// PHASE 5.0 — TASK READ ENDPOINT (the missing half of task sync)
+// ══════════════════════════════════════════════════════════════════════
+// Returns tasks in the SAME shape the client stores them in, so the client can
+// merge straight into localStorage without a translation layer.
+// Deleted rows are returned as tombstones ({id, status:'deleted'}) so a device
+// that missed the delete can drop the task instead of resurrecting it.
+function getTasksEndpoint(ss, storeFilter, who, since) {
+  const sheet = getTasksSheet(ss);
+  if (sheet.getLastRow() < 2) return jsonResp({ status:'ok', tasks:[], serverTime:new Date().toISOString() });
+  const data = sheet.getDataRange().getValues();
+  const sinceMs = since ? (new Date(since)).getTime() : 0;
+  const out = [];
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    const id = String(r[0]||'');
+    if (!id) continue;
+    const updatedAt = r[13] ? new Date(r[13]).toISOString() : '';
+    if (sinceMs && updatedAt && (new Date(updatedAt)).getTime() <= sinceMs) continue;
+    const status = String(r[7]||'');
+    if (status === 'deleted') { out.push({ id:id, status:'deleted', updatedAt:updatedAt }); continue; }
+    const store = String(r[1]||'');
+    const assignedTo = String(r[2]||''), addedBy = String(r[3]||'');
+    if (storeFilter && store && store !== storeFilter) continue;
+    if (who && assignedTo !== who && addedBy !== who) continue;
+    let recurrence = null, doneDates = [], history = [];
+    try { recurrence = r[15] ? JSON.parse(r[15]) : null; } catch(e) { recurrence = null; }
+    try { doneDates  = r[16] ? (JSON.parse(r[16]) || []) : []; } catch(e) { doneDates = []; }
+    try { history    = r[17] ? (JSON.parse(r[17]) || []) : []; } catch(e) { history = []; }
+    out.push({
+      id: id, store: store, assignedTo: assignedTo, addedBy: addedBy,
+      source: String(r[4]||''), desc: String(r[5]||''),
+      priority: String(r[6]||'normal'), status: status || 'not_started',
+      due: String(r[8]||''), date: dstr(r[9]),
+      doneAt: r[10] ? String(r[10]) : null,
+      carried: String(r[11]||'') === 'Yes',
+      carriedFrom: String(r[12]||'') || null,
+      updatedAt: updatedAt,
+      type: String(r[14]||''),
+      recurrence: recurrence, doneDates: doneDates, history: history
+    });
+  }
+  return jsonResp({ status:'ok', tasks: out, count: out.length, serverTime: new Date().toISOString() });
+}
 // Normalize a sheet cell to 'yyyy-MM-dd' (cells may be Date objects or strings)
 function dstr(v) {
   try {
@@ -1632,14 +1691,33 @@ function buildState(ss, date, storeFilter) {
   // Tasks (new layout) — pending counts + done-today per assignee
   const tk = lastRows(SH.TASKS, 1000);
   if (tk.header[0] === 'Task ID' && tk.rows.length) {
+    // ── Phase 5.0 fix (Bug #3) ──────────────────────────────────────────
+    // This block used to test `status === 'pending'`. Phase 4a renamed that state
+    // to 'not_started' and added 'in_progress' / 'blocked', so EVERY task created
+    // since Phase 4a counted as zero and every dashboard number derived from tasks
+    // was silently wrong. Recurring tasks were never counted at all, because their
+    // completion lives in the doneDates[] column, not in status.
+    // Legacy 'pending' is still accepted — old rows must keep counting (§3).
+    const OPEN_STATUSES = ['pending','not_started','in_progress','blocked'];
     tk.rows.forEach(r => {
       const s = String(r[1]||''), who = String(r[2]||'') || 'Unassigned';
       const status = String(r[7]||'');
-      if (status === 'deleted') return;
+      if (status === 'deleted' || status === 'cancelled') return;
+      // Recurrence + per-occurrence completion (cols 16/17, added in Phase 4a)
+      let recur = null, doneDates = [];
+      try { recur = r[15] ? JSON.parse(r[15]) : null; } catch(e) { recur = null; }
+      try { doneDates = r[16] ? (JSON.parse(r[16]) || []) : []; } catch(e) { doneDates = []; }
+      const doneTodayRecur = recur && doneDates.indexOf(date) >= 0;
       const target = state.stores[s] ? [s] : stores;   // storeless tasks count everywhere
       target.forEach(st => {
         if (!state.stores[st].tasks[who]) state.stores[st].tasks[who] = { pending:0, doneToday:0 };
-        if (status === 'pending') state.stores[st].tasks[who].pending++;
+        if (recur) {
+          // A recurring task is one open item per day until today's occurrence is ticked
+          if (doneTodayRecur) state.stores[st].tasks[who].doneToday++;
+          else                state.stores[st].tasks[who].pending++;
+          return;
+        }
+        if (OPEN_STATUSES.indexOf(status) >= 0) state.stores[st].tasks[who].pending++;
         else if (status === 'done' && dstr(r[10]) === date) state.stores[st].tasks[who].doneToday++;
       });
     });
