@@ -2711,7 +2711,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.8-bug11';
+var APP_VERSION = '7.9-sync';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -2728,44 +2728,55 @@ function outboxAdd(payload){
   outboxSave(list);
   updateOutboxBadge();
 }
-function updateOutboxBadge(){
-  var n = outboxLoad().length;
-  var el = document.getElementById('outbox-badge');
-  if(!el){
-    el = document.createElement('div');
-    el.id = 'outbox-badge';
-    el.style.cssText = 'position:fixed;bottom:72px;right:12px;z-index:9999;background:#b45309;color:#fff;font-size:11px;font-weight:700;padding:7px 12px;border-radius:18px;box-shadow:0 2px 10px rgba(0,0,0,.3);display:none;cursor:pointer;font-family:inherit';
-    el.onclick = function(){ syncOutbox(true); };
-    if(document.body) document.body.appendChild(el);
-  }
-  if(n>0){ el.style.display='block'; el.textContent = (lang==='hi' ? '⏳ '+n+' बाकी — sync के लिए दबाएं' : '⏳ '+n+' pending — tap to sync'); }
-  else { el.style.display='none'; }
-}
+// Retained under its original name because several call sites depend on it.
+// The amber "N pending" pill it used to draw is now the full sync chip (§3).
+function updateOutboxBadge(){ try{ beSyncRender(); }catch(e){} }
 var _outboxSyncing = false;
+// The single outbox flush routine. It now reports into BE_SYNC so the chip and
+// panel can tell "working on it right now" apart from "tried and failed, will
+// retry later", and it returns a promise so a manual Retry can await a real
+// outcome instead of guessing. _outboxSyncing remains the only concurrency
+// guard — every caller funnels through here, so there is never a second loop.
 function syncOutbox(manual){
-  if(_outboxSyncing) return;
-  var list = outboxLoad();
-  if(list.length===0){ updateOutboxBadge(); return; }
-  if(navigator.onLine===false){ if(manual) toast(lang==='hi'?'📡 Offline — online होते ही sync होगा':'📡 Offline — will sync when back online'); return; }
-  _outboxSyncing = true;
-  var failures = 0;
-  function next(){
-    var cur = outboxLoad();
-    if(cur.length===0 || failures>=cur.length){
-      _outboxSyncing=false; updateOutboxBadge();
-      if(manual && cur.length===0) toast(lang==='hi'?'✅ सब sync हो गया':'✅ All synced');
-      return;
+  return new Promise(function(resolve){
+    if(_outboxSyncing){
+      if(manual) toast(lang==='hi'?'⏳ पहले से sync चल रहा है…':'⏳ Already syncing…');
+      resolve('busy'); return;
     }
-    var item = cur[failures]; // skip past items that keep failing
-    postToScript(item, 20000).then(function(ok){
-      if(ok){
-        var latest = outboxLoad().filter(function(p){ return p.cid!==item.cid; });
-        outboxSave(latest); updateOutboxBadge();
-      } else { failures++; }
-      next();
-    });
-  }
-  next();
+    var list = outboxLoad();
+    if(list.length===0){ BE_SYNC.state='idle'; beSyncRender(); resolve('empty'); return; }
+    if(navigator.onLine===false){
+      BE_SYNC.state='idle'; beSyncRender();
+      if(manual) toast(lang==='hi'?'📡 Offline — online होते ही sync होगा':'📡 Offline — will sync when back online');
+      resolve('offline'); return;
+    }
+    _outboxSyncing = true;
+    BE_SYNC.state = 'syncing'; BE_SYNC.lastError = ''; beSyncRender();
+    var failures = 0;
+    function next(){
+      var cur = outboxLoad();
+      if(cur.length===0 || failures>=cur.length){
+        _outboxSyncing = false;
+        BE_SYNC.lastRun = Date.now();
+        if(cur.length===0){ BE_SYNC.state='idle'; beSyncMarkSuccess(); }
+        else { BE_SYNC.state='failed'; BE_SYNC.lastError = (lang==='hi'?'सर्वर तक नहीं पहुँच सका':'Could not reach the server'); }
+        beSyncRender(); beSyncPanelRefresh();
+        if(manual && cur.length===0) toast(lang==='hi'?'✅ सब sync हो गया':'✅ All synced');
+        else if(manual) toast(lang==='hi'?'⚠️ '+cur.length+' अब भी बाकी — अपने आप दोबारा कोशिश होगी':'⚠️ '+cur.length+' still pending — will keep retrying');
+        resolve(cur.length===0 ? 'done' : 'failed');
+        return;
+      }
+      var item = cur[failures]; // skip past items that keep failing
+      postToScript(item, 20000).then(function(ok){
+        if(ok){
+          var latest = outboxLoad().filter(function(p){ return p.cid!==item.cid; });
+          outboxSave(latest); beSyncMarkSuccess(); beSyncRender(); beSyncPanelRefresh();
+        } else { failures++; }
+        next();
+      });
+    }
+    next();
+  });
 }
 // One POST attempt with a hard timeout. no-cors: resolving = request reached the server.
 function postToScript(payload, timeoutMs){
@@ -2840,7 +2851,12 @@ async function submitAndVerify(payload){
   var res = await sendToSheets(payload);
   if(!res.ok) return {status:'queued', cid:res.cid};
   var confirmed = await verifySaved(res.cid, 15000);
-  if(confirmed) return {status:'confirmed', cid:res.cid};
+  if(confirmed){
+    // A server-confirmed row is the strongest possible evidence of a working
+    // connection, so it counts as a successful sync for the §3 status display.
+    try{ beSyncMarkSuccess(); beSyncRender(); }catch(e){}
+    return {status:'confirmed', cid:res.cid};
+  }
   outboxAdd(payload);
   return {status:'unconfirmed', cid:res.cid};
 }
@@ -2993,6 +3009,241 @@ if('serviceWorker' in navigator){
 } else {
   beDiag('sw-unsupported', {});
 }
+
+// ══════════════════════════════════════════════════════════════
+// §3 SYNC VISIBILITY — honest, always-visible transport status
+// ══════════════════════════════════════════════════════════════
+// Until now the only signal anyone got was an amber "N pending" pill plus a
+// one-line message on the form they had just submitted. There was no way to
+// tell "uploading right now" from "tried, failed, sitting in the queue", no
+// last-successful-sync time anywhere, and no single Retry control — so the only
+// recovery staff knew was to close the app and open it again.
+//
+// Rules this component must never break:
+//   • "Synced" is shown ONLY when the outbox is genuinely empty. If even one
+//     write is still queued, the chip says pending or failed — never synced.
+//   • The pending count is derived from the real outbox array on every render.
+//     It is never a separate counter that could drift out of step with reality.
+//   • One retry loop only. Chip tap, panel button, the 90s timer and the online
+//     event all funnel through beSyncNow() → syncOutbox(), guarded by
+//     _beSyncBusy and _outboxSyncing. A second tap is refused, not stacked.
+//   • Nothing here blocks ordinary use: the chip is a small fixed overlay and
+//     the panel is dismissable; no submission path waits on either.
+//   • Technical detail (cids, payload types, versions, raw timestamps) is shown
+//     to Owner/Manager/PC only. Everyone else gets plain-language status.
+var LAST_SYNC_KEY = 'be_last_sync_v1';
+var BE_SYNC = { state:'idle', lastError:'', lastRun:0 };
+var _beSyncBusy = false;
+
+function beSyncMarkSuccess(){
+  try{ localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString()); }catch(e){}
+}
+function beSyncLastAt(){ try{ return localStorage.getItem(LAST_SYNC_KEY)||''; }catch(e){ return ''; } }
+function beSyncAgo(iso){
+  if(!iso) return null;
+  var t = (new Date(iso)).getTime();
+  if(isNaN(t)) return null;
+  var s = Math.max(0, Math.round((Date.now()-t)/1000));
+  if(s<60) return lang==='hi' ? 'अभी-अभी' : 'just now';
+  var m = Math.round(s/60);
+  if(m<60) return lang==='hi' ? (m+' मिनट पहले') : (m+'m ago');
+  var h = Math.round(m/60);
+  if(h<24) return lang==='hi' ? (h+' घंटे पहले') : (h+'h ago');
+  var d = Math.round(h/24);
+  return lang==='hi' ? (d+' दिन पहले') : (d+'d ago');
+}
+// Owner/Manager/PC only — read directly off CURRENT_USER rather than via can(),
+// so this works even before the RBAC block further down has been reached.
+function beSyncPrivileged(){
+  try{
+    var r = (typeof CURRENT_USER!=='undefined' && CURRENT_USER && CURRENT_USER.roles) ? CURRENT_USER.roles : [];
+    return r.indexOf('Owner')>=0 || r.indexOf('Manager')>=0 || r.indexOf('PC')>=0;
+  }catch(e){ return false; }
+}
+// The single source of truth for everything the chip and panel display.
+function beSyncStatus(){
+  var pending = 0;
+  try{ pending = outboxLoad().length; }catch(e){ pending = 0; }
+  var online = (navigator.onLine !== false);
+  var key;
+  if(!online) key = 'offline';
+  else if(BE_SYNC.state==='syncing') key = 'syncing';
+  else if(pending>0 && BE_SYNC.state==='failed') key = 'failed';
+  else if(pending>0) key = 'pending';
+  else key = 'synced';
+  return { key:key, pending:pending, online:online, lastAt:beSyncLastAt() };
+}
+var BE_SYNC_STYLE = {
+  offline:{bg:'#7a1f1f', dot:'#ff9b9b'},
+  syncing:{bg:'#b45309', dot:'#ffe4b0'},
+  failed: {bg:'#8a1c1c', dot:'#ffc9c9'},
+  pending:{bg:'#b45309', dot:'#ffe4b0'},
+  synced: {bg:'#1f5d2b', dot:'#a7e8b4'}
+};
+function beSyncChipText(s){
+  var hi = (lang==='hi');
+  if(s.key==='offline') return s.pending>0
+    ? (hi ? ('Offline · '+s.pending+' बाकी') : ('Offline · '+s.pending+' waiting'))
+    : (hi ? 'Offline' : 'Offline');
+  if(s.key==='syncing') return s.pending>0
+    ? (hi ? ('Sync हो रहा है… '+s.pending) : ('Syncing… '+s.pending))
+    : (hi ? 'Sync हो रहा है…' : 'Syncing…');
+  if(s.key==='failed')  return hi ? ('Sync विफल · '+s.pending+' बाकी') : ('Sync failed · '+s.pending+' waiting');
+  if(s.key==='pending') return hi ? (s.pending+' अपलोड बाकी') : (s.pending+' waiting to upload');
+  var ago = beSyncAgo(s.lastAt);
+  return ago ? (hi ? ('Synced · '+ago) : ('Synced · '+ago)) : (hi ? 'Online' : 'Online');
+}
+function beSyncRender(){
+  if(!document.body) return;
+  var s = beSyncStatus();
+  var chip = document.getElementById('be-sync-chip');
+  if(!chip){
+    chip = document.createElement('div');
+    chip.id = 'be-sync-chip';
+    chip.setAttribute('role','status');
+    chip.setAttribute('aria-live','polite');
+    chip.style.cssText = 'position:fixed;right:12px;z-index:9998;display:flex;align-items:center;gap:6px;color:#fff;font-size:11px;font-weight:700;padding:7px 12px;border-radius:18px;box-shadow:0 2px 10px rgba(0,0,0,.3);cursor:pointer;font-family:inherit;max-width:74vw;line-height:1.2';
+    chip.addEventListener('click', function(){ beSyncPanelOpen(); });
+    document.body.appendChild(chip);
+  }
+  var c = BE_SYNC_STYLE[s.key] || BE_SYNC_STYLE.pending;
+  chip.style.background = c.bg;
+  // Stay clear of the Bug #9 update banner when that is on screen.
+  var upd = document.getElementById('be-update-banner');
+  chip.style.bottom = (upd && upd.style.display && upd.style.display!=='none') ? '112px' : '72px';
+  var dot = '<span style="width:8px;height:8px;border-radius:50%;background:'+c.dot+';flex:0 0 auto"></span>';
+  chip.innerHTML = dot + '<span>' + beSyncChipText(s) + '</span>';
+}
+// ── Detail panel ─────────────────────────────────────────────
+function beSyncPanelOpen(){
+  beSyncPanelClose();
+  var ov = document.createElement('div');
+  ov.id = 'be-sync-panel';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99998;display:flex;align-items:flex-end;justify-content:center';
+  ov.addEventListener('click', function(e){ if(e.target===ov) beSyncPanelClose(); });
+  var box = document.createElement('div');
+  box.id = 'be-sync-panel-body';
+  box.style.cssText = 'background:#fff;width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:16px 16px 22px;font-family:inherit;box-shadow:0 -6px 30px rgba(0,0,0,.35);max-height:82vh;overflow:auto;box-sizing:border-box';
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  beSyncPanelRefresh();
+}
+function beSyncPanelClose(){
+  var p = document.getElementById('be-sync-panel');
+  if(p){ try{ document.body.removeChild(p); }catch(e){} }
+}
+function beSyncRowHtml(label, value, colour){
+  return '<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #eee;font-size:13px">'+
+         '<span style="color:#666">'+label+'</span>'+
+         '<span style="font-weight:700;text-align:right;color:'+(colour||'#222')+'">'+value+'</span></div>';
+}
+// Re-renders the panel in place if (and only if) it is currently open.
+function beSyncPanelRefresh(){
+  var box = document.getElementById('be-sync-panel-body');
+  if(!box) return;
+  var s = beSyncStatus(), hi = (lang==='hi');
+  var c = BE_SYNC_STYLE[s.key] || BE_SYNC_STYLE.pending;
+  var headline;
+  if(s.key==='offline') headline = hi ? '📡 Offline — काम चलता रहेगा, इंटरनेट आते ही अपने आप भेजा जाएगा' : '📡 Offline — keep working, everything uploads automatically when you reconnect';
+  else if(s.key==='syncing') headline = hi ? '⏳ भेजा जा रहा है…' : '⏳ Uploading now…';
+  else if(s.key==='failed') headline = hi ? '⚠️ सर्वर तक नहीं पहुँच सका — आपका काम सुरक्षित है, दोबारा कोशिश होती रहेगी' : '⚠️ Could not reach the server — your work is safe on this device and will keep retrying';
+  else if(s.key==='pending') headline = hi ? '📥 अपलोड बाकी है' : '📥 Waiting to upload';
+  else headline = hi ? '✅ सब कुछ सर्वर पर सेव है' : '✅ Everything is saved to the server';
+
+  var html = '';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
+          '<div style="font-size:15px;font-weight:800">'+(hi?'Sync स्थिति':'Sync status')+'</div>'+
+          '<button type="button" id="be-sync-x" style="border:none;background:#f0f0f0;border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;cursor:pointer">✕</button></div>';
+  html += '<div style="background:'+c.bg+';color:#fff;border-radius:10px;padding:11px 12px;font-size:13px;font-weight:700;line-height:1.4;margin-bottom:12px">'+headline+'</div>';
+  html += beSyncRowHtml(hi?'कनेक्शन':'Connection',
+            s.online ? (hi?'Online':'Online') : (hi?'Offline':'Offline'),
+            s.online ? '#1f5d2b' : '#8a1c1c');
+  var ago = beSyncAgo(s.lastAt);
+  html += beSyncRowHtml(hi?'आखिरी सफल sync':'Last successful sync',
+            ago ? ago : (hi?'अभी तक नहीं':'Not yet'), ago?'#222':'#8a6d1c');
+  html += beSyncRowHtml(hi?'बाकी आइटम (offline queue)':'Pending items (offline queue)',
+            String(s.pending), s.pending>0 ? '#b45309' : '#1f5d2b');
+  var stTxt = {offline:(hi?'Offline':'Offline'), syncing:(hi?'Sync हो रहा है':'Syncing'),
+               failed:(hi?'Sync विफल':'Sync failed'), pending:(hi?'कतार में':'Queued'),
+               synced:(hi?'Synced':'Synced')}[s.key];
+  html += beSyncRowHtml(hi?'स्थिति':'State', stTxt, c.bg);
+  html += '<button type="button" id="be-sync-retry" style="width:100%;margin-top:14px;padding:12px;border:none;border-radius:10px;background:#b8860b;color:#fff;font-size:14px;font-weight:800;cursor:pointer">'+
+          (s.key==='syncing' ? (hi?'⏳ चल रहा है…':'⏳ Working…') : (hi?'🔄 अभी दोबारा कोशिश करें':'🔄 Retry now'))+'</button>';
+  if(s.key==='syncing'){ html = html.replace('id="be-sync-retry"','id="be-sync-retry" disabled'); }
+
+  if(beSyncPrivileged()){
+    var items = [];
+    try{ items = outboxLoad(); }catch(e){ items = []; }
+    var det = '';
+    det += '<div style="font-size:11px;color:#666;margin-bottom:6px">'+(hi?'सिर्फ Owner/Manager के लिए':'Owner/Manager only')+'</div>';
+    det += '<div style="font-size:11px;font-family:monospace;color:#333;line-height:1.7">';
+    det += 'app: '+(typeof APP_VERSION!=='undefined'?APP_VERSION:'?')+'<br>';
+    det += 'lastSyncISO: '+(s.lastAt||'—')+'<br>';
+    det += 'outbox: '+items.length+'<br>';
+    det += 'loopBusy: '+(_outboxSyncing?'yes':'no')+' / '+(_beSyncBusy?'yes':'no')+'<br>';
+    det += 'lastError: '+(BE_SYNC.lastError||'—')+'<br>';
+    try{ det += 'tasksPulledAt: '+((localStorage.getItem(TASK_PULL_TS_KEY)||'—'))+'<br>'; }catch(e){}
+    det += '</div>';
+    if(items.length){
+      det += '<div style="margin-top:8px;font-size:11px;font-family:monospace;color:#333;line-height:1.6">';
+      for(var i=0;i<items.length && i<25;i++){
+        var it = items[i]||{};
+        det += (i+1)+'. '+(it.type_||'?')+' · '+(it.cid||'no-cid')+' · '+(it.deviceTime||it.date||'—')+'<br>';
+      }
+      if(items.length>25) det += '…+'+(items.length-25)+' more<br>';
+      det += '</div>';
+    }
+    html += '<details style="margin-top:14px;border-top:1px solid #eee;padding-top:10px">'+
+            '<summary style="cursor:pointer;font-size:12px;font-weight:700;color:#555">'+(hi?'तकनीकी जानकारी':'Technical details')+'</summary>'+
+            '<div style="margin-top:8px">'+det+'</div></details>';
+  }
+  box.innerHTML = html;
+  var x = document.getElementById('be-sync-x');
+  if(x) x.addEventListener('click', beSyncPanelClose);
+  var rb = document.getElementById('be-sync-retry');
+  if(rb) rb.addEventListener('click', function(){ beSyncNow(true); });
+}
+// The one manual/automatic entry point. Flushes the outbox first (writes matter
+// most), then refreshes reads. Guarded so a second tap cannot start a parallel
+// loop — it is refused with a message rather than queued up behind the first.
+function beSyncNow(manual){
+  if(_beSyncBusy){
+    if(manual) toast(lang==='hi'?'⏳ पहले से चल रहा है…':'⏳ Already running…');
+    return Promise.resolve('busy');
+  }
+  if(navigator.onLine===false){
+    if(manual) toast(lang==='hi'?'📡 Offline — इंटरनेट आते ही अपने आप sync होगा':'📡 Offline — will sync automatically when you reconnect');
+    beSyncRender(); beSyncPanelRefresh();
+    return Promise.resolve('offline');
+  }
+  _beSyncBusy = true;
+  BE_SYNC.state = 'syncing'; beSyncRender(); beSyncPanelRefresh();
+  return syncOutbox(manual).then(function(r){
+    var jobs = [];
+    try{ if(typeof pullTasksFromServer==='function') jobs.push(pullTasksFromServer({})); }catch(e){}
+    try{ if(typeof appDataPullAndRefresh==='function') jobs.push(appDataPullAndRefresh()); }catch(e){}
+    return Promise.all(jobs).then(function(){ return r; });
+  }).then(function(r){
+    _beSyncBusy = false;
+    var stillPending = 0;
+    try{ stillPending = outboxLoad().length; }catch(e){}
+    if(stillPending===0 && BE_SYNC.state!=='failed'){ BE_SYNC.state='idle'; beSyncMarkSuccess(); }
+    beSyncRender(); beSyncPanelRefresh();
+    return r;
+  })['catch'](function(err){
+    _beSyncBusy = false;
+    BE_SYNC.state = (outboxLoad().length>0) ? 'failed' : 'idle';
+    BE_SYNC.lastError = String(err && err.message || err || 'unknown');
+    beSyncRender(); beSyncPanelRefresh();
+    return 'error';
+  });
+}
+// Keep the relative "last synced" text and the Online/Offline dot honest without
+// touching the network — pure re-render, once every 20 seconds.
+setInterval(function(){ try{ beSyncRender(); beSyncPanelRefresh(); }catch(e){} }, 20000);
+window.addEventListener('online',  function(){ try{ beSyncRender(); beSyncPanelRefresh(); }catch(e){} });
+window.addEventListener('offline', function(){ try{ BE_SYNC.state='idle'; beSyncRender(); beSyncPanelRefresh(); }catch(e){} });
+document.addEventListener('DOMContentLoaded', function(){ try{ beSyncRender(); }catch(e){} });
 
 window.addEventListener('online', function(){ syncOutbox(false); });
 setInterval(function(){ syncOutbox(false); }, 90000);
