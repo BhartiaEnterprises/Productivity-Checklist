@@ -1426,9 +1426,36 @@ function getSheetData(ss, sheetName, store, dateOrMonth) {
   const headers = data[0];
   const hNames = headers.map(String);
   const cDate  = hNames.indexOf('Date') >= 0 ? hNames.indexOf('Date') : hNames.indexOf('date');
+  // The Attendance sheet's header row predates its own writer (see attnRow
+  // above), so keying its records by that header puts the staff member's NAME
+  // under 'Status', leaves 'Staff Name' blank and shifts every time field by
+  // one column. Resolving that one sheet per row returns the values under the
+  // names they are actually meant to have. Every other sheet keeps the generic
+  // header-keyed shape unchanged, so this is scoped, not a global rewrite.
+  const isAttn = String(sheetName) === String(SH.ATTENDANCE);
   let records = data.slice(1).map(row=>{
     const obj={};
-    headers.forEach((h,i)=>{ obj[String(h)]=row[i]!==undefined?String(row[i]):''; });
+    if (isAttn) {
+      const a = attnRow(row);
+      obj['Timestamp']    = a.timestamp;
+      obj['Store']        = a.store;
+      obj['Date']         = String(a.dateRaw||'');
+      obj['Supervisor']   = a.supervisor;
+      obj['Staff Name']   = a.name;
+      obj['Status']       = a.status;
+      obj['Time In']      = a.timeIn;
+      obj['Lunch Out']    = a.lunchOut;
+      obj['Lunch In']     = a.lunchIn;
+      obj['Time Out']     = a.timeOut;
+      obj['Work Hours']   = a.workHours;
+      obj['Remark']       = a.remark;
+      obj['Submitted At'] = a.submittedAt;
+      // Which physical layout this row was stored in. Kept so an auditor can
+      // tell resolved rows apart from raw ones without opening the sheet.
+      obj['Row Layout']   = a.layout;
+    } else {
+      headers.forEach((h,i)=>{ obj[String(h)]=row[i]!==undefined?String(row[i]):''; });
+    }
     // Normalised copy of the Date cell, used for filtering only and stripped
     // before the response is built. Date cells are stored sometimes as real
     // Date objects and sometimes as text; the Date-object form stringifies to
@@ -2098,6 +2125,8 @@ function attnRow(r) {
     timeOut:    String(r[9 + o]||''),
     workHours:  String(r[11]||''),          // index 11 in both layouts
     remark:     String(r[o ? 12 : 10]||''),
+    timestamp:  String(r[0]||''),
+    submittedAt:String(r[o ? 13 : 12]||''),
     layout:     o ? 'writer' : 'legacy'
   };
 }
