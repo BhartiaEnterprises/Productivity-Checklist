@@ -2711,7 +2711,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '7.9-sync';
+var APP_VERSION = '8.0-dash';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -5613,6 +5613,643 @@ var AUTO_FLOW = [
   {id:'bc_close',  store:'BC',  type:'closing',    label:'BC — Closing Checklist',   who:'Store Manager', time:'21:00'},
   {id:'vks_close', store:'VKS', type:'closing',    label:'VKS — Closing Checklist',  who:'Store Manager', time:'21:00'},
 ];
+// ══════════════════════════════════════════════════════════════════════
+// PHASE 5 §§6–8 — PERSONA DASHBOARDS (Owner / Manager / Employee)
+//
+// Every number rendered below comes from ?action=dashboard, which is built
+// server-side from the live sheets (Tasks, Attendance, Checklists, Camera
+// Reports, Productivity, Leave Applications, Points Log, App Data). Nothing
+// here invents, estimates or samples a figure: if the server did not send a
+// value the card says so rather than showing a placeholder.
+//
+// Permission is enforced in TWO places, per §4: the server's dashScope()
+// refuses out-of-scope requests and never puts other stores' data in the
+// response, and the renderer below only draws the block matching the scope
+// the SERVER reported (never the scope the client believes it has). Hiding a
+// card is treated as presentation, not as the security boundary.
+// ══════════════════════════════════════════════════════════════════════
+var DASH_CACHE_KEY = 'be_dash_cache_v1';
+var DASH_FRESH_MS  = 45000;          // matches the server's 45s cache window
+var BE_DASH = { data:null, at:0, loading:false, err:'', from:'' };
+
+function pdEsc(s){
+  return String(s===undefined||s===null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// Sheets stores a bare time-of-day as a Date pinned to 30 Dec 1899. Showing
+// that raw string to a shopkeeper is meaningless, so times are reduced to
+// HH:mm. Anything that is already 'HH:mm' is passed through untouched, and
+// anything unrecognised is returned as-is rather than blanked — no value is
+// ever silently dropped.
+// String.padStart is ES2017; the app still runs on older Android WebViews
+// inside the WhatsApp in-app browser, so pad manually.
+function pd2(n){ return (n<10?'0':'')+n; }
+function pdTime(v){
+  var s = String(v===undefined||v===null?'':v).trim();
+  if(!s) return '';
+  if(/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) return s.slice(0,5);
+  // The clock reading is taken straight out of the text and is NEVER routed
+  // through new Date(). Sheets renders a bare time-of-day as a Date pinned to
+  // 30 Dec 1899, and 1899 India carried the +05:21 Madras mean-time offset, so
+  // re-parsing that string and calling getHours() shifts a 10:02 punch-in to
+  // 10:11 on an IST phone and to 04:41 on a UTC machine. The digits printed in
+  // the string are already the wall-clock time the staff member entered, so
+  // they are read literally and nothing is recomputed.
+  var m = s.match(/\b(\d{1,2}):(\d{2})(?::\d{2})?\b/);
+  if(m) return pd2(Number(m[1]))+':'+m[2];
+  return s;
+}
+function pdNum(n){ var v = Number(n); return isNaN(v) ? 0 : v; }
+function pdHi(){ return lang==='hi'; }
+
+// ── Presentation primitives ───────────────────────────────────────────
+function pdCard(title, bodyHtml, sub){
+  return '<div class="card" style="margin-bottom:10px">'+
+    '<div class="card-title">'+pdEsc(title)+'</div>'+
+    (sub ? '<div style="font-size:10px;color:var(--light);margin:-4px 0 8px">'+pdEsc(sub)+'</div>' : '')+
+    bodyHtml+'</div>';
+}
+// A single big number. tone: 'ok' | 'warn' | 'bad' | 'flat'
+function pdStat(label, value, tone){
+  var col = tone==='bad' ? '#b91c1c' : tone==='warn' ? '#b45309' : tone==='ok' ? '#166534' : '#1f2937';
+  return '<div style="flex:1 1 78px;min-width:78px;text-align:center;padding:8px 4px;'+
+    'background:#fff;border:1.5px solid var(--border);border-radius:9px">'+
+    '<div style="font-size:22px;font-weight:800;line-height:1.1;color:'+col+'">'+pdEsc(value)+'</div>'+
+    '<div style="font-size:9.5px;color:var(--light);margin-top:3px;line-height:1.2">'+pdEsc(label)+'</div>'+
+    '</div>';
+}
+function pdStatRow(cells){
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap">'+cells.join('')+'</div>';
+}
+function pdRow(left, right, tone){
+  var col = tone==='bad' ? '#b91c1c' : tone==='warn' ? '#b45309' : tone==='ok' ? '#166534' : 'inherit';
+  return '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;'+
+    'border-bottom:1px solid var(--border);font-size:12px">'+
+    '<span>'+pdEsc(left)+'</span>'+
+    '<span style="font-weight:700;color:'+col+'">'+pdEsc(right)+'</span></div>';
+}
+function pdEmpty(msg){
+  return '<div style="padding:10px;text-align:center;font-size:11.5px;color:var(--light)">'+pdEsc(msg)+'</div>';
+}
+// "no data yet" and "zero" are different facts and are never merged.
+function pdNone(){ return pdEmpty(pdHi()?'कुछ भी बाकी नहीं ✓':'Nothing outstanding ✓'); }
+
+function pdPct(p){
+  if(p===null||p===undefined||p==='') return '—';
+  var v = Number(p);
+  return isNaN(v) ? '—' : (Math.round(v)+'%');
+}
+
+// ── Transport ─────────────────────────────────────────────────────────
+// The PIN hash is read from the same verified cache the rest of the app
+// uses. It is never derived here and never logged. Users with no PIN on
+// file authenticate by name alone, exactly as the server allows.
+function pdPinHash(){
+  try{
+    if(!CURRENT_USER) return '';
+    var c = JSON.parse(localStorage.getItem(PIN_CACHE_KEY)||'{}');
+    return c[CURRENT_USER.name] || '';
+  }catch(e){ return ''; }
+}
+function pdCacheLoad(){
+  try{
+    var raw = localStorage.getItem(DASH_CACHE_KEY);
+    if(!raw) return null;
+    var o = JSON.parse(raw);
+    // Cached payloads are bound to the user they were fetched for, so a
+    // second person signing in on the same device can never be shown the
+    // previous person's figures.
+    if(!o || !o.payload || !CURRENT_USER || o.user !== CURRENT_USER.name) return null;
+    return o;
+  }catch(e){ return null; }
+}
+function pdCacheSave(payload){
+  try{
+    localStorage.setItem(DASH_CACHE_KEY, JSON.stringify({
+      user: CURRENT_USER ? CURRENT_USER.name : '', at: Date.now(), payload: payload
+    }));
+  }catch(e){}
+}
+// Local-first: a cached payload is shown immediately (clearly labelled with
+// its age) and the network copy replaces it when it lands. A failed fetch
+// never blanks the screen and never blocks the rest of the app.
+function fetchPersonaDashboard(force){
+  return new Promise(function(resolve){
+    if(!CURRENT_USER){ resolve(null); return; }
+    if(!force && BE_DASH.data && (Date.now()-BE_DASH.at) < DASH_FRESH_MS){ resolve(BE_DASH.data); return; }
+    if(BE_DASH.loading){ resolve(BE_DASH.data); return; }
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){ resolve(null); return; }
+    BE_DASH.loading = true;
+    var url = SCRIPT_URL+'?action=dashboard'+
+      '&user='+encodeURIComponent(CURRENT_USER.name)+
+      '&hash='+encodeURIComponent(pdPinHash())+
+      '&date='+encodeURIComponent(todayStr2())+
+      '&_ts='+Date.now();
+    var done = false;
+    var timer = setTimeout(function(){
+      if(done) return; done = true; BE_DASH.loading = false;
+      BE_DASH.err = pdHi()?'सर्वर ने जवाब नहीं दिया':'Server did not respond';
+      resolve(BE_DASH.data);
+    }, 20000);
+    fetch(url, {method:'GET', redirect:'follow'})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if(done) return; done = true; clearTimeout(timer); BE_DASH.loading = false;
+        if(!j || j.status!=='ok'){
+          BE_DASH.err = (j && j.reason)
+            ? (pdHi()?('पहुँच अस्वीकृत: '+j.reason):('Access denied: '+j.reason))
+            : (pdHi()?'डैशबोर्ड लोड नहीं हुआ':'Dashboard could not be loaded');
+          resolve(BE_DASH.data); return;
+        }
+        BE_DASH.data = j; BE_DASH.at = Date.now(); BE_DASH.err = ''; BE_DASH.from = 'server';
+        pdCacheSave(j);
+        resolve(j);
+      })
+      .catch(function(){
+        if(done) return; done = true; clearTimeout(timer); BE_DASH.loading = false;
+        BE_DASH.err = pdHi()?'ऑफ़लाइन — पुराना डेटा दिख रहा है':'Offline — showing last known figures';
+        resolve(BE_DASH.data);
+      });
+  });
+}
+
+// ── Owner: Business Command Centre (§6) — 15 cards ────────────────────
+function pdOwnerHtml(d){
+  var o = d.owner, h = pdHi(), out = [];
+
+  // 1–5 Business Pulse. Answers "what is happening across my company?"
+  out.push(pdCard(h?'📊 बिज़नेस पल्स':'📊 Business Pulse',
+    pdStatRow([
+      pdStat(h?'खुले टास्क':'Active tasks', pdNum(o.totalActiveTasks), 'flat'),
+      pdStat(h?'ओवरड्यू':'Overdue', pdNum(o.overdueTasks), pdNum(o.overdueTasks)>0?'bad':'ok'),
+      pdStat(h?'आज ड्यू':'Due today', pdNum(o.dueToday), pdNum(o.dueToday)>0?'warn':'ok'),
+      pdStat(h?'आज पूरे':'Done today', pdNum(o.completedToday), 'ok'),
+      pdStat(h?'रुटीन अनुपालन':'Recurring', pdPct(o.recurringCompliance && o.recurringCompliance.pct),
+        (o.recurringCompliance && o.recurringCompliance.pct!==null && o.recurringCompliance.pct<80)?'warn':'ok')
+    ]) +
+    '<div style="font-size:10px;color:var(--light);margin-top:6px">'+
+      pdEsc(h?('रुटीन: '+pdNum(o.recurringCompliance&&o.recurringCompliance.doneToday)+' / '+
+               pdNum(o.recurringCompliance&&o.recurringCompliance.dueToday)+' आज पूरे')
+             :('Recurring: '+pdNum(o.recurringCompliance&&o.recurringCompliance.doneToday)+' of '+
+               pdNum(o.recurringCompliance&&o.recurringCompliance.dueToday)+' done today'))+
+    '</div>', d.date));
+
+  // 6 Store-wise performance
+  var storeHtml = '';
+  var sp = o.storePerformance || {};
+  Object.keys(sp).forEach(function(s){
+    var b = sp[s]; if(!b) return;
+    var st = b.state || {}, at = b.attendance || {}, tk = b.tasks || {};
+    var flow = ['opening','attendance','camera','closing'].filter(function(k){
+      return st[k] && st[k].done; }).length;
+    storeHtml += '<div style="border:1.5px solid var(--border);border-radius:9px;padding:8px;margin-bottom:7px">'+
+      '<div style="display:flex;justify-content:space-between;font-weight:800;font-size:13px;margin-bottom:5px">'+
+        '<span>'+pdEsc(s)+'</span><span style="font-size:11px;color:var(--light)">'+flow+'/4 '+
+        pdEsc(h?'दैनिक चरण':'daily steps')+'</span></div>'+
+      pdRow(h?'खुले टास्क':'Open tasks', pdNum(tk.open)) +
+      pdRow(h?'ओवरड्यू':'Overdue', pdNum(tk.overdue), pdNum(tk.overdue)>0?'bad':'ok') +
+      pdRow(h?'आज पूरे':'Completed today', pdNum(tk.doneToday), 'ok') +
+      pdRow(h?'हाज़िरी लगी':'Attendance marked',
+            pdNum(at.marked)+' / '+pdNum(at.rostered),
+            (pdNum(at.marked)<pdNum(at.rostered))?'warn':'ok') +
+      pdRow(h?'प्रोडक्टिविटी जमा':'Productivity submitted', pdNum(b.productivitySubmitted)) +
+      '</div>';
+  });
+  out.push(pdCard(h?'🏪 स्टोर प्रदर्शन':'🏪 Store performance', storeHtml || pdEmpty(h?'कोई स्टोर डेटा नहीं':'No store data')));
+
+  // 7 Employee-wise performance
+  // dashByPerson() returns an ARRAY of {name,open,overdue,doneToday}, already
+  // sorted by overdue then open. It is read as an array here — treating it as
+  // a keyed map would label every row with its array index instead of the
+  // person's name. A defensive copy is sorted rather than the payload itself.
+  var ep = o.employeePerformance;
+  var epList = Object.prototype.toString.call(ep)==='[object Array]' ? ep.slice()
+             : (ep ? Object.keys(ep).map(function(k){
+                 var v = ep[k] || {}; return { name:v.name||k, open:v.open, overdue:v.overdue, doneToday:v.doneToday };
+               }) : []);
+  epList.sort(function(a,b){
+    return pdNum(b.overdue)-pdNum(a.overdue) || pdNum(b.open)-pdNum(a.open); });
+  var epHtml = epList.length ? epList.map(function(p){
+    return pdRow(p.name, (h?'खुले ':'open ')+pdNum(p.open)+' · '+(h?'ओवरड्यू ':'overdue ')+pdNum(p.overdue)+
+                    ' · '+(h?'आज ':'today ')+pdNum(p.doneToday),
+                 pdNum(p.overdue)>0?'bad':'flat');
+  }).join('') : pdEmpty(h?'कोई असाइन टास्क नहीं':'No assigned tasks');
+  out.push(pdCard(h?'👥 कर्मचारी प्रदर्शन':'👥 Employee performance', epHtml));
+
+  // 8 Functional targets  /  9 Individual targets
+  function targetsHtml(list, none){
+    if(!list || !list.length) return pdEmpty(none);
+    return list.map(function(entry){
+      var data = entry.data || {}, keys = Object.keys(data);
+      return '<div style="margin-bottom:6px"><div style="font-weight:700;font-size:12px">'+pdEsc(entry.store)+'</div>'+
+        (keys.length ? keys.map(function(k){
+          var v = data[k];
+          return pdRow(k, (v && typeof v==='object') ? JSON.stringify(v) : String(v));
+        }).join('') : pdEmpty(none)) + '</div>';
+    }).join('');
+  }
+  out.push(pdCard(h?'🎯 फंक्शनल टारगेट':'🎯 Functional targets',
+    targetsHtml(o.functionalTargets, h?'इस महीने कोई टारगेट सेट नहीं':'No targets set for this month'), d.month));
+  out.push(pdCard(h?'🎯 व्यक्तिगत टारगेट':'🎯 Individual targets',
+    targetsHtml(o.individualTargets, h?'इस महीने कोई टारगेट सेट नहीं':'No targets set for this month'), d.month));
+
+  // 10 Attendance exceptions
+  var ax = o.attendanceExceptions || {byStatus:{}, notMarked:[], lunchMissing:0};
+  var axHtml = Object.keys(ax.byStatus||{}).map(function(k){
+    return pdRow(k, pdNum(ax.byStatus[k]), k==='absent'?'bad':k==='late'?'warn':'ok'); }).join('');
+  axHtml += pdRow(h?'लंच समय दर्ज नहीं':'Lunch times missing', pdNum(ax.lunchMissing), pdNum(ax.lunchMissing)>0?'warn':'ok');
+  axHtml += pdRow(h?'हाज़िरी नहीं लगी':'Not marked at all', (ax.notMarked||[]).length, (ax.notMarked||[]).length>0?'bad':'ok');
+  if((ax.notMarked||[]).length){
+    axHtml += '<div style="font-size:11px;color:#b91c1c;padding-top:5px">'+
+      pdEsc((ax.notMarked).map(function(x){ return x.name+' ('+x.store+')'; }).join(', '))+'</div>';
+  }
+  out.push(pdCard(h?'🕐 हाज़िरी अपवाद':'🕐 Attendance exceptions', axHtml));
+
+  // 11 Leave awaiting action
+  var lv = o.leaveAwaitingAction || {count:0, list:[]};
+  out.push(pdCard(h?'📝 छुट्टी — निर्णय बाकी':'📝 Leave awaiting your decision',
+    pdNum(lv.count)===0 ? pdNone() :
+    (lv.list||[]).map(function(x){
+      return pdRow((x.name||'')+' · '+(x.store||''), (x.from||x.date||'')+' → '+(x.to||x.date||''), 'warn');
+    }).join('')));
+
+  // 12 Points issued and redeemed
+  var pt = o.points || {};
+  out.push(pdCard(h?'⭐ पॉइंट्स':'⭐ Points',
+    pdStatRow([
+      pdStat(h?'जारी':'Issued', pdNum(pt.issued), 'flat'),
+      pdStat(h?'भुनाए':'Redeemed', pdNum(pt.redeemed), 'flat'),
+      pdStat(h?'बचे':'Net outstanding', pdNum(pt.net), 'flat')
+    ]), pt.source || ''));
+
+  // 13 Sync health
+  out.push(pdCard(h?'🔄 सिंक स्वास्थ्य':'🔄 Sync health', pdSyncHealthHtml(o.syncHealth)));
+
+  // 14 Unresolved operational alerts
+  var al = o.openAlerts || {count:0, list:[]};
+  out.push(pdCard(h?'⚠️ खुले अलर्ट':'⚠️ Unresolved alerts',
+    pdNum(al.count)===0 ? pdNone() :
+    (al.list||[]).map(function(a){
+      return '<div style="padding:6px 8px;margin-bottom:5px;border-left:3px solid #b45309;'+
+        'background:#fff7ed;border-radius:5px;font-size:11.5px">'+pdEsc(a.text||a.kind)+'</div>';
+    }).join('')));
+
+  // 15 Records with missing ownership / data
+  // dashDataQuality() returns four counts plus `total` and a nested `ids`
+  // object holding up to 25 sample Task IDs per category. Only the counts are
+  // rendered; blindly iterating the object would print the `ids` blob as raw
+  // JSON. The counts are labelled in plain language rather than by field name.
+  var dq = o.dataQuality || {};
+  var dqFields = [
+    ['noAssignee',    h?'कोई ज़िम्मेदार नहीं':'No one assigned'],
+    ['noStore',       h?'कोई स्टोर नहीं':'No store set'],
+    ['noDescription', h?'कोई विवरण नहीं':'No description'],
+    ['noDate',        h?'कोई तारीख नहीं':'No date or due date']
+  ];
+  var dqTotal = pdNum(dq.total);
+  var dqHtml = dqFields.map(function(f){
+    return pdRow(f[1], pdNum(dq[f[0]]), pdNum(dq[f[0]])>0?'warn':'ok');
+  }).join('');
+  out.push(pdCard(h?'🧹 अधूरा डेटा':'🧹 Records with missing data',
+    dqTotal===0 ? pdEmpty(h?'सभी खुले टास्क पूरे भरे हैं ✓':'Every open task is fully filled in ✓') : dqHtml,
+    dqTotal===0 ? '' : (h?(dqTotal+' खुले टास्क में जानकारी अधूरी है')
+                         :(dqTotal+' open tasks are missing information'))));
+
+  return out.join('');
+}
+
+function pdSyncHealthHtml(sh){
+  var h = pdHi(), local = beSyncStatus();
+  var out = '';
+  out += pdRow(h?'इस डिवाइस पर बाकी':'Waiting on this device', pdNum(local.pending),
+               pdNum(local.pending)>0?'warn':'ok');
+  out += pdRow(h?'कनेक्शन':'Connection', local.online?(h?'ऑनलाइन':'Online'):(h?'ऑफ़लाइन':'Offline'),
+               local.online?'ok':'bad');
+  var ago = beSyncAgo(local.lastAt);
+  out += pdRow(h?'अंतिम सफल सिंक':'Last successful sync', ago || (h?'अभी तक नहीं':'not yet'));
+  if(sh){
+    // dashSyncHealth() names it lastTaskWriteAt; the employee block sends the
+    // same instant as lastServerWriteAt. Both are accepted so neither persona
+    // silently shows a blank row.
+    var srv = sh.lastTaskWriteAt || sh.lastServerWriteAt;
+    if(srv) out += pdRow(h?'सर्वर पर अंतिम लेखन':'Last server write', (beSyncAgo(srv) || srv));
+    if(sh.lastAppDataWriteAt) out += pdRow(h?'अंतिम सेटिंग सेव':'Last settings save',
+                                           (beSyncAgo(sh.lastAppDataWriteAt) || sh.lastAppDataWriteAt));
+    if(sh.submissionsToday!==undefined) out += pdRow(h?'आज सर्वर पर जमा':'Submissions recorded today',
+                                                     pdNum(sh.submissionsToday));
+  }
+  return out;
+}
+
+// ── Manager: execution dashboard (§7) — 9 cards ───────────────────────
+function pdManagerHtml(d){
+  var m = d.manager, h = pdHi(), out = [];
+
+  // 1 Assigned store summary
+  var ss = m.storeSummary || {}, ssHtml = '';
+  Object.keys(ss).forEach(function(s){
+    var st = ss[s] || {};
+    ssHtml += '<div style="border:1.5px solid var(--border);border-radius:9px;padding:8px;margin-bottom:7px">'+
+      '<div style="font-weight:800;font-size:13px;margin-bottom:5px">'+pdEsc(s)+'</div>'+
+      pdRow(h?'उद्घाटन':'Opening',   (st.opening&&st.opening.done)?'✓ '+pdTime(st.opening.time):'⏳', (st.opening&&st.opening.done)?'ok':'warn')+
+      pdRow(h?'हाज़िरी':'Attendance', (st.attendance&&st.attendance.done)?'✓ '+pdNum(st.attendance.staffMarked)+(h?' लोग':' staff'):'⏳', (st.attendance&&st.attendance.done)?'ok':'warn')+
+      pdRow(h?'कैमरा':'Camera',      (st.camera&&st.camera.done)?'✓ '+pdNum(st.camera.photos):'⏳', (st.camera&&st.camera.done)?'ok':'warn')+
+      pdRow(h?'समापन':'Closing',     (st.closing&&st.closing.done)?'✓ '+pdTime(st.closing.time):'⏳', (st.closing&&st.closing.done)?'ok':'warn')+
+      '</div>';
+  });
+  out.push(pdCard(h?'🏪 मेरा स्टोर — आज':'🏪 My store — today', ssHtml || pdEmpty(h?'कोई स्टोर नहीं':'No store assigned'), d.date));
+
+  // 2 Staff present / late / absent
+  var stf = m.staff || {}, stfHtml = '';
+  Object.keys(stf).forEach(function(s){
+    var b = stf[s] || {};
+    stfHtml += '<div style="margin-bottom:7px"><div style="font-weight:700;font-size:12px">'+pdEsc(s)+'</div>'+
+      pdStatRow([
+        pdStat(h?'हाज़िर':'Present', pdNum(b.byStatus && b.byStatus.present), 'ok'),
+        pdStat(h?'देर से':'Late',    pdNum(b.byStatus && b.byStatus.late), pdNum(b.byStatus&&b.byStatus.late)>0?'warn':'ok'),
+        pdStat(h?'अनुपस्थित':'Absent',pdNum(b.byStatus && b.byStatus.absent), pdNum(b.byStatus&&b.byStatus.absent)>0?'bad':'ok'),
+        pdStat(h?'आधा दिन':'Half day',pdNum(b.byStatus && b.byStatus.halfday), 'flat')
+      ])+
+      pdRow(h?'रोस्टर बनाम दर्ज':'Rostered vs marked', pdNum(b.rostered)+' / '+pdNum(b.marked),
+            (pdNum(b.marked)<pdNum(b.rostered))?'warn':'ok')+
+      pdRow(h?'लंच समय अधूरा':'Lunch times missing', pdNum(b.lunchMissing), pdNum(b.lunchMissing)>0?'warn':'ok')+
+      ((b.notMarked&&b.notMarked.length)
+        ? '<div style="font-size:11px;color:#b91c1c;padding-top:4px">'+
+          pdEsc((h?'दर्ज नहीं: ':'Not marked: ')+b.notMarked.join(', '))+'</div>' : '')+
+      '</div>';
+  });
+  out.push(pdCard(h?'👥 स्टाफ हाज़िरी':'👥 Staff attendance', stfHtml || pdEmpty(h?'कोई स्टाफ डेटा नहीं':'No staff data')));
+
+  // 3 Pending and overdue tasks
+  var tk = m.tasks || {};
+  out.push(pdCard(h?'✅ टास्क — निष्पादन':'✅ Tasks — execution',
+    pdStatRow([
+      pdStat(h?'खुले':'Open', pdNum(tk.open), 'flat'),
+      pdStat(h?'ओवरड्यू':'Overdue', pdNum(tk.overdue), pdNum(tk.overdue)>0?'bad':'ok'),
+      pdStat(h?'आज ड्यू':'Due today', pdNum(tk.dueToday), pdNum(tk.dueToday)>0?'warn':'ok'),
+      pdStat(h?'आज पूरे':'Done today', pdNum(tk.doneToday), 'ok')
+    ])));
+
+  // 4 Recurring checklist completion
+  var rc = m.recurringCompletion || {};
+  out.push(pdCard(h?'🔁 रुटीन चेकलिस्ट':'🔁 Recurring checklist',
+    pdStatRow([
+      pdStat(h?'आज ड्यू':'Due today', pdNum(rc.dueToday), 'flat'),
+      pdStat(h?'पूरे':'Done', pdNum(rc.doneToday), 'ok'),
+      pdStat(h?'अनुपालन':'Compliance', pdPct(rc.pct), (rc.pct!==null&&rc.pct<80)?'warn':'ok')
+    ])));
+
+  // 5 Target achievement
+  var tg = m.targets || {};
+  var tgList = (tg.functional||[]).concat(tg.individual||[]);
+  out.push(pdCard(h?'🎯 टारगेट':'🎯 Target achievement',
+    tgList.length ? tgList.map(function(e){
+      var data = e.data||{}, ks = Object.keys(data);
+      return '<div style="margin-bottom:6px"><div style="font-weight:700;font-size:12px">'+pdEsc(e.store)+'</div>'+
+        (ks.length ? ks.map(function(k){
+          var v = data[k];
+          return pdRow(k, (v&&typeof v==='object')?JSON.stringify(v):String(v));
+        }).join('') : pdEmpty(h?'कोई मान नहीं':'No values')) + '</div>';
+    }).join('') : pdEmpty(h?'इस महीने कोई टारगेट सेट नहीं':'No targets set for this month'), tg.month||d.month));
+
+  // 6 Leave requests
+  var lr = m.leaveRequests || {pending:0, list:[]};
+  out.push(pdCard(h?'📝 छुट्टी अनुरोध':'📝 Leave requests',
+    pdNum(lr.pending)===0 ? pdNone() :
+    (lr.list||[]).map(function(x){
+      return pdRow((x.name||'')+' · '+(x.store||''), (x.from||x.date||'')+' → '+(x.to||x.date||''), 'warn');
+    }).join('')));
+
+  // 7 Productivity exceptions
+  var px = m.productivityExceptions || {count:0, list:[]};
+  out.push(pdCard(h?'📉 प्रोडक्टिविटी अपवाद':'📉 Productivity exceptions',
+    pdNum(px.count)===0 ? pdNone() :
+    '<div style="font-size:11.5px;color:#b45309;margin-bottom:6px">'+
+      pdEsc(h?(pdNum(px.count)+' लोगों ने आज प्रोडक्टिविटी नहीं भरी')
+             :(pdNum(px.count)+' staff have not submitted productivity today'))+'</div>'+
+    (px.list||[]).map(function(x){ return pdRow(x.name, x.store, 'warn'); }).join('')));
+
+  // 8 Pending approvals
+  var pa = m.pendingApprovals || {total:0};
+  out.push(pdCard(h?'🖐️ मंजूरी बाकी':'🖐️ Pending approvals',
+    pdNum(pa.total)===0 ? pdNone() : pdRow(h?'छुट्टी':'Leave', pdNum(pa.leaves), 'warn'),
+    pa.note || ''));
+
+  // 9 Records waiting to sync
+  out.push(pdCard(h?'🔄 सिंक बाकी':'🔄 Records waiting to sync', pdSyncHealthHtml(m.syncHealth)));
+
+  return out.join('');
+}
+
+// ── Employee: my day (§8) — 11 cards ──────────────────────────────────
+function pdEmployeeHtml(d){
+  var e = d.employee, h = pdHi(), out = [];
+
+  // 11 Clear next action — deliberately FIRST: it is the whole point of the
+  // team member's home screen.
+  var na = e.nextAction;
+  out.push(pdCard(h?'👉 अभी यह करें':'👉 Do this next',
+    na ? '<div style="padding:10px;background:#eff6ff;border:2px solid #2563eb;border-radius:9px">'+
+          '<div style="font-size:13.5px;font-weight:700">'+pdEsc(na.desc)+'</div>'+
+          '<div style="font-size:11px;color:#b45309;margin-top:4px">'+
+            pdEsc(na.why==='overdue' ? (h?'⏰ ओवरड्यू':'⏰ Overdue') : (h?'📅 आज ड्यू':'📅 Due today'))+
+          '</div></div>'
+       : pdEmpty(h?'सब पूरा — कुछ बाकी नहीं ✓':'All clear — nothing pending ✓')));
+
+  // 1–4 My work
+  out.push(pdCard(h?'✅ मेरा काम':'✅ My work',
+    pdStatRow([
+      pdStat(h?'मेरे टास्क':'My tasks', pdNum(e.myTasks && e.myTasks.open), 'flat'),
+      pdStat(h?'आज':'Today', pdNum(e.today && e.today.count), pdNum(e.today&&e.today.count)>0?'warn':'ok'),
+      pdStat(h?'ओवरड्यू':'Overdue', pdNum(e.overdue && e.overdue.count), pdNum(e.overdue&&e.overdue.count)>0?'bad':'ok'),
+      pdStat(h?'रुटीन':'Recurring', pdPct(e.recurring && e.recurring.pct), 'ok')
+    ]) +
+    ((e.myTasks && e.myTasks.list && e.myTasks.list.length)
+      ? '<div style="margin-top:8px">'+e.myTasks.list.slice(0,8).map(function(x){
+          return pdRow((x.recurring?'🔁 ':'')+x.desc, x.store||'—',
+                       x.priority==='urgent'?'bad':x.priority==='high'?'warn':'flat');
+        }).join('')+
+        (e.myTasks.list.length>8 ? '<div style="font-size:10px;color:var(--light);padding-top:5px">'+
+          pdEsc(h?('+'+(e.myTasks.list.length-8)+' और'):('+'+(e.myTasks.list.length-8)+' more'))+'</div>' : '')+
+        '</div>'
+      : pdEmpty(h?'कोई टास्क असाइन नहीं':'No tasks assigned'))));
+
+  // 5 My attendance
+  var ma = e.myAttendance || {};
+  out.push(pdCard(h?'🕐 मेरी हाज़िरी':'🕐 My attendance',
+    ma.markedToday && ma.today
+      ? pdRow(h?'स्थिति':'Status', ma.today.status, ma.today.status==='present'?'ok':ma.today.status==='late'?'warn':'bad')+
+        pdRow(h?'आगमन':'Time in', pdTime(ma.today.timeIn) || '—')+
+        pdRow(h?'लंच':'Lunch', (pdTime(ma.today.lunchOut)||'—')+' → '+(pdTime(ma.today.lunchIn)||'—'),
+              (!ma.today.lunchOut||!ma.today.lunchIn)?'warn':'ok')+
+        pdRow(h?'प्रस्थान':'Time out', pdTime(ma.today.timeOut) || '—')
+      : pdEmpty(h?'आज हाज़िरी दर्ज नहीं हुई':'Attendance not marked for you today'), d.date));
+
+  // 6 My targets
+  var mt = e.myTargets || {individual:[]};
+  out.push(pdCard(h?'🎯 मेरे टारगेट':'🎯 My targets',
+    (mt.individual && mt.individual.length)
+      ? mt.individual.map(function(x){
+          var v = x.target;
+          return pdRow(x.store+' · '+x.month, (v&&typeof v==='object')?JSON.stringify(v):String(v));
+        }).join('')
+      : pdEmpty(h?'इस महीने कोई टारगेट सेट नहीं':'No target set for you this month'), mt.month||d.month));
+
+  // 7 My points
+  var mp = e.myPoints || {};
+  out.push(pdCard(h?'⭐ मेरे पॉइंट्स':'⭐ My points',
+    pdStatRow([
+      pdStat(h?'कमाए':'Earned', pdNum(mp.earned), 'ok'),
+      pdStat(h?'भुनाए':'Redeemed', pdNum(mp.redeemed), 'flat'),
+      pdStat(h?'बचे':'Balance', pdNum(mp.net), 'flat')
+    ]), mp.month||d.month));
+
+  // 8 My leave
+  var ml = e.myLeave || {count:0, list:[]};
+  out.push(pdCard(h?'📝 मेरी छुट्टी':'📝 My leave',
+    pdNum(ml.count)===0 ? pdEmpty(h?'कोई छुट्टी आवेदन नहीं':'No leave applications') :
+    (ml.list||[]).map(function(x){
+      var st = String(x.status||x.granted||'');
+      return pdRow((x.from||x.date||'')+' → '+(x.to||x.date||''), st || (h?'लंबित':'Pending'),
+                   /pending/i.test(st)?'warn':/grant|approv/i.test(st)?'ok':'flat');
+    }).join('')));
+
+  // 9 My planner
+  var mpl = e.myPlanner || {};
+  var plKeys = (mpl.present && mpl.data) ? Object.keys(mpl.data) : [];
+  out.push(pdCard(h?'🗓️ मेरा प्लानर':'🗓️ My Planner',
+    plKeys.length ? plKeys.slice(0,10).map(function(k){
+      var v = mpl.data[k];
+      var label = (v && (v.text || v.title || v.desc)) || k;
+      var when  = (v && (v.date || v.day || v.when)) || '';
+      return pdRow(label, when || '—');
+    }).join('') : pdEmpty(h?'प्लानर खाली है':'Planner is empty')));
+
+  // 10 Sync status
+  out.push(pdCard(h?'🔄 सिंक स्थिति':'🔄 Sync status', pdSyncHealthHtml(e.syncStatus)));
+
+  return out.join('');
+}
+
+// ── Mount / render ────────────────────────────────────────────────────
+function pdContainer(){
+  var inner = document.querySelector('#tab-dashboard > div');
+  if(!inner) return null;
+  var el = document.getElementById('persona-dash');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'persona-dash';
+  }
+  // applyDashboardPersona() re-pins the "My Tasks Today" widget to the top of
+  // the page for Team Members on every call, so the position is re-asserted
+  // here rather than only on creation — otherwise the persona dashboard would
+  // be pushed below it and the employee's "clear next action" (§8) would stop
+  // being the first thing on screen.
+  if(el.parentElement !== inner || inner.firstChild !== el){
+    inner.insertBefore(el, inner.firstChild);
+  }
+  return el;
+}
+// The legacy Command Center grid is a data-entry surface. §6 requires that
+// nothing on the owner's home page asks them to fill attendance or a
+// checklist, so for the owner it is collapsed behind a toggle rather than
+// removed — managers and members keep it exactly as it was, and the owner
+// can still open it in one tap.
+function pdDemoteLegacyForOwner(scope){
+  var inner = document.querySelector('#tab-dashboard > div');
+  if(!inner) return;
+  var header = inner.querySelector('.cmd-header');
+  var legacy = document.getElementById('legacy-cmd-wrap');
+  if(scope!=='owner'){
+    if(legacy){
+      // Restore: put the children back where they came from and drop the wrapper.
+      while(legacy.firstChild) inner.appendChild(legacy.firstChild);
+      var tg = document.getElementById('legacy-cmd-toggle');
+      if(tg && tg.parentElement) tg.parentElement.removeChild(tg);
+      legacy.parentElement.removeChild(legacy);
+    }
+    return;
+  }
+  if(legacy) return;   // already demoted
+  legacy = document.createElement('div');
+  legacy.id = 'legacy-cmd-wrap';
+  legacy.style.display = 'none';
+  var move = [], child = header ? header.nextSibling : inner.firstChild;
+  while(child){
+    if(child.nodeType===1 && child.id!=='persona-dash' && child.id!=='legacy-cmd-toggle') move.push(child);
+    child = child.nextSibling;
+  }
+  move.forEach(function(n){ legacy.appendChild(n); });
+  var toggle = document.createElement('button');
+  toggle.id = 'legacy-cmd-toggle';
+  toggle.type = 'button';
+  toggle.style.cssText = 'width:100%;margin:4px 0 10px;padding:9px;border-radius:9px;border:1.5px solid var(--border);'+
+    'background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit';
+  toggle.textContent = pdHi() ? '▾ दैनिक चेकलिस्ट व स्टाफ भरने की स्थिति' : '▾ Daily checklist & staff fill status';
+  toggle.onclick = function(){
+    var w = document.getElementById('legacy-cmd-wrap'); if(!w) return;
+    var open = w.style.display !== 'none';
+    w.style.display = open ? 'none' : '';
+    this.textContent = (open ? '▾ ' : '▴ ') +
+      (pdHi() ? 'दैनिक चेकलिस्ट व स्टाफ भरने की स्थिति' : 'Daily checklist & staff fill status');
+  };
+  inner.appendChild(toggle);
+  inner.appendChild(legacy);
+}
+
+function renderPersonaDashboard(){
+  var el = pdContainer(); if(!el) return;
+  var h = pdHi();
+  var d = BE_DASH.data;
+  if(!d){
+    var cached = pdCacheLoad();
+    if(cached){ d = cached.payload; BE_DASH.from = 'cache'; }
+  }
+  if(!d){
+    el.innerHTML = pdCard(h?'📊 डैशबोर्ड':'📊 Dashboard',
+      pdEmpty(BE_DASH.err || (BE_DASH.loading ? (h?'लोड हो रहा है…':'Loading…')
+                                              : (h?'डैशबोर्ड अभी उपलब्ध नहीं':'Dashboard not available yet'))));
+    return;
+  }
+  // The SERVER's scope decides what is drawn — not the client's own idea of
+  // the user's role. A tampered client cannot promote itself, because the
+  // payload it received never contained the higher-scope blocks.
+  var scope = d.scope;
+  var title = scope==='owner'   ? (h?'🏢 बिज़नेस कमांड सेंटर':'🏢 Business Command Centre')
+            : scope==='manager' ? (h?'🧭 स्टोर निष्पादन':'🧭 Store Execution')
+                                : (h?'🙋 मेरा दिन':'🙋 My Day');
+  var stale = (BE_DASH.from==='cache' || BE_DASH.err);
+  var head = '<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 0 10px;gap:8px">'+
+    '<div><div style="font-size:16px;font-weight:800">'+pdEsc(title)+'</div>'+
+    '<div style="font-size:10px;color:var(--light)">'+pdEsc((d.user||'')+' · '+(d.date||''))+
+      (stale ? pdEsc(h?' · पुराना डेटा':' · showing cached figures') : '')+'</div></div>'+
+    '<button type="button" onclick="personaDashRefresh(true)" style="background:#333;color:#fff;border:none;'+
+      'border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit">🔄</button></div>';
+  var body = '';
+  try{
+    if(scope==='owner' && d.owner)         body = pdOwnerHtml(d);
+    else if(scope==='manager' && d.manager) body = pdManagerHtml(d);
+    else if(d.employee)                     body = pdEmployeeHtml(d);
+    else body = pdEmpty(h?'इस भूमिका के लिए कोई डेटा नहीं':'No data available for this role');
+  }catch(err){
+    // A rendering fault must never take the whole app down.
+    console.warn('persona dashboard render failed', err);
+    body = pdEmpty(h?'डैशबोर्ड दिखाने में समस्या':'Could not display the dashboard');
+  }
+  el.innerHTML = head + body;
+  if(BE_DASH.err){
+    el.insertAdjacentHTML('beforeend',
+      '<div style="font-size:10.5px;color:#b45309;text-align:center;padding:6px">'+pdEsc(BE_DASH.err)+'</div>');
+  }
+  try{ pdDemoteLegacyForOwner(scope); }catch(e){}
+}
+
+function personaDashRefresh(force){
+  renderPersonaDashboard();                 // paint cached/last figures at once
+  fetchPersonaDashboard(!!force).then(function(){ renderPersonaDashboard(); });
+}
+
 function refreshDashboard(){
   var today = todayStr2();
   var lastEl = document.getElementById('cmd-last-refresh');
@@ -5624,6 +6261,10 @@ function refreshDashboard(){
   }
   // Phase 1: overlay the authoritative server state (what actually landed in Sheets)
   applyServerStateToDashboard(today);
+  // Phase 5 §§6-8: the persona dashboard paints from cache immediately and
+  // refreshes from ?action=dashboard in the background. Wrapped so a failure
+  // here can never stop the legacy dashboard from rendering.
+  try{ personaDashRefresh(false); }catch(e){}
 }
 function applyServerStateToDashboard(today){
   fetchServerState(today).then(function(st){
@@ -7413,6 +8054,9 @@ function applyDashboardPersona(){
     btn.title = can('toggleWAAutomation') ? '' : (lang==='hi'?'सिर्फ Owner बदल सकते हैं':'Owner-only setting');
   });
   // Leaderboard/quick-actions stay visible for everyone — motivating for team members too
+  // Phase 5 §§6-8: draw the role-appropriate dashboard. The block that gets
+  // drawn is chosen from the scope the SERVER reports, not from lvl above.
+  try{ personaDashRefresh(false); }catch(e){}
 }
 // ══ PHASE 4: TASK-TAB PERMISSIONS ══════════════════════════════════════
 // The "Owner View" (team-wide task view, with reassign/delete-others) is a manager/owner
