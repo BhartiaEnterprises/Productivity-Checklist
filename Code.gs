@@ -1552,17 +1552,31 @@ function handleTaskSync(ss, d, now) {
 // merge straight into localStorage without a translation layer.
 // Deleted rows are returned as tombstones ({id, status:'deleted'}) so a device
 // that missed the delete can drop the task instead of resurrecting it.
+// Sheet cells are untrusted: a column may hold a Date, an ISO string, a hand-typed
+// value, or junk. new Date(junk).toISOString() throws RangeError and would 500 the
+// whole endpoint over one bad row, so every conversion goes through here.
+function isoOrEmpty(v) {
+  if (v === null || v === undefined || v === '') return '';
+  try {
+    const d = (Object.prototype.toString.call(v) === '[object Date]') ? v : new Date(String(v));
+    const ms = d.getTime();
+    if (!ms && ms !== 0) return '';
+    if (isNaN(ms)) return '';
+    return d.toISOString();
+  } catch(e) { return ''; }
+}
 function getTasksEndpoint(ss, storeFilter, who, since) {
   const sheet = getTasksSheet(ss);
-  if (sheet.getLastRow() < 2) return jsonResp({ status:'ok', tasks:[], serverTime:new Date().toISOString() });
+  if (sheet.getLastRow() < 2) return jsonResp({ status:'ok', tasks:[], count:0, serverTime:new Date().toISOString() });
   const data = sheet.getDataRange().getValues();
-  const sinceMs = since ? (new Date(since)).getTime() : 0;
+  let sinceMs = 0;
+  if (since) { const _s = (new Date(String(since))).getTime(); if (!isNaN(_s)) sinceMs = _s; }
   const out = [];
   for (let i = 1; i < data.length; i++) {
     const r = data[i];
     const id = String(r[0]||'');
     if (!id) continue;
-    const updatedAt = r[13] ? new Date(r[13]).toISOString() : '';
+    const updatedAt = isoOrEmpty(r[13]);
     if (sinceMs && updatedAt && (new Date(updatedAt)).getTime() <= sinceMs) continue;
     const status = String(r[7]||'');
     if (status === 'deleted') { out.push({ id:id, status:'deleted', updatedAt:updatedAt }); continue; }
@@ -1578,8 +1592,9 @@ function getTasksEndpoint(ss, storeFilter, who, since) {
       id: id, store: store, assignedTo: assignedTo, addedBy: addedBy,
       source: String(r[4]||''), desc: String(r[5]||''),
       priority: String(r[6]||'normal'), status: status || 'not_started',
-      due: String(r[8]||''), date: dstr(r[9]),
-      doneAt: r[10] ? String(r[10]) : null,
+      due: (Object.prototype.toString.call(r[8]) === '[object Date]') ? dstr(r[8]) : String(r[8]||''),
+      date: dstr(r[9]),
+      doneAt: isoOrEmpty(r[10]) || (r[10] ? String(r[10]) : null),
       carried: String(r[11]||'') === 'Yes',
       carriedFrom: String(r[12]||'') || null,
       updatedAt: updatedAt,
