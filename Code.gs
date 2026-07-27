@@ -3582,7 +3582,13 @@ function beTextHeaders(m) {
   // timestamp re-typed as a date would break dedupe and conflict detection.
   const out = ['ID', 'Created At', 'Created By', 'Updated At', 'Updated By'];
   m.fields.forEach(function (f) {
-    if (f.t === 'text' || f.t === 'longtext' || f.t === 'enum') out.push(f.k);
+    // 'date' and 'time' are stored as literal strings for the same reason
+    // Period was: beValidate has already canonicalised them to 'yyyy-mm-dd'
+    // and 'hh:mm', and leaving them unpinned lets Sheets re-type '2026-07-27'
+    // into a Date and '09:30' into an 1899-epoch time carrying the +05:21
+    // Madras offset, so the value read back is not the value written.
+    if (f.t === 'text' || f.t === 'longtext' || f.t === 'enum' ||
+        f.t === 'date' || f.t === 'time') out.push(f.k);
   });
   return out;
 }
