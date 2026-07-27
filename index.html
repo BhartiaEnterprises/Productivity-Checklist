@@ -1652,6 +1652,19 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
       <textarea id="prod-notes" rows="3" placeholder="Manager comments, KPI achievements, improvement areas..." style="width:100%;padding:9px 11px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;resize:none;font-family:inherit;outline:none" onchange="saveProdNotes()"></textarea>
     </div>
     <button class="btn green" style="width:100%" onclick="submitProductivity()">✓ <span class="hi">शीट जमा करें / Submit Sheet</span></button>
+    <!-- ── §12 TIMESHEET ENTRIES (server-backed) ───────────────────────
+         The grid above is the local 15/30/60-minute planner and is unchanged.
+         This section is the Timesheet MODULE: every row below is read back from
+         the live 'timesheet' sheet with the signed-in user's own credentials,
+         and Minutes is computed by the server from Start and End, never typed.
+         Nothing here is sample data. -->
+    <div style="border-top:2px solid var(--border);margin-top:18px;padding-top:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--light);margin-bottom:8px">⏱️ TIMESHEET ENTRIES — GOOGLE SHEETS</div>
+      <div id="tsx-status" style="font-size:11px;color:var(--light);margin-bottom:8px;line-height:1.45"></div>
+      <div id="tsx-conflict"></div>
+      <div id="tsx-form"></div>
+      <div id="tsx-list"></div>
+    </div>
     </div><!-- /prod-timesheet-view -->
     <!-- SOCIAL MEDIA EXECUTIVE VIEW -->
     <div id="prod-sme-view" style="display:none">
@@ -1781,6 +1794,22 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
       </div>
       <div id="train-body"></div>
       <button class="btn green" style="width:100%;margin-top:10px" onclick="submitTraining()">✓ <span class="hi">Training पूरा — जमा करें</span></button>
+      <!-- ── §10 TRAINING MODULES + PROGRESS (server-backed) ───────────
+           The daily checklist above is unchanged. This section is the Training
+           MODULE: the course catalogue is written by a Manager or Owner and
+           every progress row belongs to the person who recorded it. All rows
+           come from the live sheets — there is no sample catalogue here. -->
+      <div style="border-top:2px solid var(--border);margin-top:18px;padding-top:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--light);margin-bottom:8px">🎓 COURSES &amp; PROGRESS — GOOGLE SHEETS</div>
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <button class="btn" id="trn-seg-training_progress" onclick="perfSetSeg('training_progress')" style="flex:1;font-size:12px">📊 <span class="hi">मेरी प्रगति</span></button>
+          <button class="btn" id="trn-seg-training_module" onclick="perfSetSeg('training_module')" style="flex:1;font-size:12px">📚 <span class="hi">कोर्स सूची</span></button>
+        </div>
+        <div id="trn-status" style="font-size:11px;color:var(--light);margin-bottom:8px;line-height:1.45"></div>
+        <div id="trn-conflict"></div>
+        <div id="trn-form"></div>
+        <div id="trn-list"></div>
+      </div>
     </div>
     <!-- ── §9 PERFORMANCE VIEW: KRA definitions, KPI entries, Goals ──
          Every row shown here is read from the live 'module' endpoint with the
@@ -2731,7 +2760,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '8.2.1-phase5-kpi';
+var APP_VERSION = '8.3.0-phase5-train-ts';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -7326,8 +7355,11 @@ function setProdSub(sub){
   if(sub==='inventory') renderInventory();
   if(sub==='crm') renderCRM();
   if(sub==='bda') renderBDA();
-  if(sub==='training') renderTraining();
-  if(sub==='performance') renderPerformance();
+  // renderTraining() draws the legacy daily checklist, which is unchanged.
+  // perfSetHub() mounts the server-backed module hub underneath it.
+  if(sub==='training'){ renderTraining(); perfSetHub('train'); }
+  if(sub==='timesheet') perfSetHub('ts');
+  if(sub==='performance') perfSetHub('perf');
 }
 function saveSMEName(){
   var n=document.getElementById('sme-name');
@@ -8700,7 +8732,51 @@ var BE_MOD_FALLBACK = {
       {key:'Progress',    type:'num'},
       {key:'Status',      type:'enum', values:['not_started','in_progress','at_risk','achieved','missed','cancelled'], def:'not_started'},
       {key:'Set By',      type:'text', max:80}
-    ], derived:['Progress %'] }
+    ], derived:['Progress %'] },
+  // §10 TRAINING — the catalogue is manager-written, the progress rows are the
+  // employee's own. Both mirror BE_MODULES in Code.gs exactly; the server's own
+  // registry still overwrites this copy on the first successful load.
+  training_module: { label:'Training Module', write:'manager', own:null, storeField:'Store', dateField:'',
+    fields:[
+      {key:'Title',          type:'text',     max:200, required:true},
+      {key:'Category',       type:'text',     max:80},
+      {key:'Description',    type:'longtext', max:2000},
+      {key:'Duration (min)', type:'int'},
+      {key:'Level',          type:'enum',     values:['basic','intermediate','advanced'], def:'basic'},
+      {key:'Content URL',    type:'text',     max:500},
+      {key:'Roles',          type:'text',     max:200},
+      {key:'Store',          type:'text',     max:20},
+      {key:'Mandatory',      type:'bool',     def:false},
+      {key:'Active',         type:'bool',     def:true}
+    ], derived:[] },
+  training_progress: { label:'Training Progress', write:'member', own:'Employee', storeField:'Store', dateField:'',
+    fields:[
+      {key:'Module ID',    type:'text',     max:40, required:true},
+      {key:'Employee',     type:'text',     max:80, required:true},
+      {key:'Store',        type:'text',     max:20},
+      {key:'Status',       type:'enum',     values:['not_started','in_progress','completed'], def:'not_started'},
+      {key:'Progress %',   type:'pct'},
+      {key:'Started At',   type:'text',     max:40},
+      {key:'Completed At', type:'text',     max:40},
+      {key:'Score',        type:'num'},
+      {key:'Attempts',     type:'int'},
+      {key:'Note',         type:'longtext', max:1000}
+    ], derived:[] },
+  // §12 TIMESHEET — Minutes is derived by the server from Start and End, so it
+  // is listed as derived and never appears as a typed field.
+  timesheet: { label:'Timesheet Entry', write:'member', own:'Employee', storeField:'Store', dateField:'Date',
+    fields:[
+      {key:'Date',     type:'date', required:true},
+      {key:'Employee', type:'text', max:80, required:true},
+      {key:'Store',    type:'text', max:20},
+      {key:'Task ID',  type:'text', max:40},
+      {key:'Activity', type:'text', max:200, required:true},
+      {key:'Category', type:'text', max:80},
+      {key:'Start',    type:'time'},
+      {key:'End',      type:'time'},
+      {key:'Note',     type:'longtext', max:1000},
+      {key:'Source',   type:'text', max:40}
+    ], derived:['Minutes'] }
 };
 
 function beModSpec(key){
@@ -8937,7 +9013,21 @@ function beModDiff(row, rec){
 // ══════════════════════════════════════════════════════════════
 // §9 PERFORMANCE SCREENS
 // ══════════════════════════════════════════════════════════════
-var PERF_SEG   = 'kpi';       // 'kpi' | 'goal' | 'kra'
+// ── hubs ──────────────────────────────────────────────────────────────
+// One screen layer, mounted in three places. A hub is just a DOM id prefix and
+// the list of module keys that live under it, so §10 Training and §12 Timesheet
+// reuse the same list, form, validation, conflict and sync code that §9 already
+// runs in production instead of getting a second copy of it.
+//   perf  → prod-perf-view       (KPI / Goals / KRA)
+//   train → prod-training-view   (Training progress / Training courses)
+//   ts    → prod-timesheet-view  (Timesheet entries)
+var BE_HUBS = {
+  perf:  { prefix:'perf', segs:['kpi','goal','kra'],                    def:'kpi' },
+  train: { prefix:'trn',  segs:['training_progress','training_module'], def:'training_progress' },
+  ts:    { prefix:'tsx',  segs:['timesheet'],                           def:'timesheet' }
+};
+var PERF_HUB   = 'perf';      // which hub is on screen
+var PERF_SEG   = 'kpi';       // which module key inside that hub
 var PERF_EDIT  = null;        // id currently being edited, '' = new record
 var PERF_DRAFT = {};          // in-progress form values, kept across renders
 var PERF_MSG   = '';          // last status line (html)
@@ -8970,29 +9060,62 @@ function perfStoreField(spec){
   for(var i=0;i<spec.fields.length;i++) if(spec.fields[i].key==='Store') return 'Store';
   return '';
 }
+function perfHubDef(){ return BE_HUBS[PERF_HUB] || BE_HUBS.perf; }
+function perfPfx(){ return perfHubDef().prefix; }
+// Every DOM lookup in this layer goes through here, so the same code drives
+// perf-*, trn-* and tsx-* without three copies of the markup handling.
+function perfEl(suffix){ return document.getElementById(perfPfx()+'-'+suffix); }
+function perfSegHub(seg){
+  var ks = Object.keys(BE_HUBS), i;
+  for(i=0;i<ks.length;i++) if(BE_HUBS[ks[i]].segs.indexOf(seg) >= 0) return ks[i];
+  return 'perf';
+}
+function perfClearHub(hub){
+  var d = BE_HUBS[hub];
+  if(!d) return;
+  var names = ['list','form','conflict','status'], i, e;
+  for(i=0;i<names.length;i++){
+    e = document.getElementById(d.prefix+'-'+names[i]);
+    if(e) e.innerHTML = '';
+  }
+}
+// Switching sub-tab wipes the hub being left. Two reasons, both real: one
+// module's rows must never be readable under another module's heading, and two
+// forms in the DOM at once would otherwise share the same field element ids.
+function perfSetHub(hub){
+  if(!BE_HUBS[hub]) hub = 'perf';
+  if(hub !== PERF_HUB) perfClearHub(PERF_HUB);
+  PERF_HUB = hub;
+  if(perfHubDef().segs.indexOf(PERF_SEG) < 0) PERF_SEG = perfHubDef().def;
+  PERF_EDIT = null; PERF_DRAFT = {}; PERF_MSG = ''; PERF_CONFLICT = null;
+  renderPerformance(false);
+}
 function perfSetSeg(seg){
+  var hb = perfSegHub(seg);
   PERF_SEG = seg;
+  if(hb !== PERF_HUB){ perfSetHub(hb); return; }
   PERF_EDIT = null; PERF_DRAFT = {}; PERF_MSG = ''; PERF_CONFLICT = null;
   // Clear the previous segment's rows so one module's records can never be
   // left on screen under another module's heading while the next load runs.
-  var le = document.getElementById('perf-list'); if(le) le.innerHTML = '';
+  var le = perfEl('list'); if(le) le.innerHTML = '';
+  var fe = perfEl('form'); if(fe) fe.innerHTML = '';
   renderPerformance(false);
 }
 function perfSegButtons(){
-  var map = {kpi:'perf-seg-kpi', goal:'perf-seg-goal', kra:'perf-seg-kra'};
-  Object.keys(map).forEach(function(k){
-    var b = document.getElementById(map[k]);
-    if(!b) return;
-    var on = (k===PERF_SEG);
+  var segs = perfHubDef().segs, p = perfPfx(), i, b, on;
+  for(i=0;i<segs.length;i++){
+    b = document.getElementById(p+'-seg-'+segs[i]);
+    if(!b) continue;
+    on = (segs[i]===PERF_SEG);
     b.style.background  = on ? 'var(--dark)' : '#fff';
     b.style.color       = on ? '#fff' : 'var(--dark)';
     b.style.borderColor = on ? 'var(--dark)' : 'var(--border)';
-  });
+  }
 }
 
 function renderPerformance(force){
   perfSegButtons();
-  var listEl = document.getElementById('perf-list');
+  var listEl = perfEl('list');
   if(!CURRENT_USER){
     if(listEl) listEl.innerHTML = pdEmpty(perfHi()?'पहले login करें':'Please log in first');
     perfRenderForm(); perfRenderStatus('');
@@ -9010,6 +9133,22 @@ function renderPerformance(force){
       beModRegistry().then(function(m){ if(m){ perfRenderForm(); } });
     }
   }catch(e){}
+  // A progress row stores only a Module ID, so the course catalogue is read in
+  // the background to turn those IDs into real titles and to fill the course
+  // picker. It is a read of the same live sheet, not a second source of truth:
+  // if it fails, IDs stay on screen and the field falls back to free text.
+  if(PERF_SEG === 'training_progress'){
+    var ts = BE_MOD_STATE['training_module'];
+    if(!ts || (!ts.items && !ts.loading)){
+      beModFetch('training_module', {limit:200}, false).then(function(){
+        if(PERF_SEG === 'training_progress'){
+          var cur = BE_MOD_STATE[PERF_SEG];
+          perfRenderForm();
+          if(cur) perfRenderList(cur);
+        }
+      });
+    }
+  }
   var params = {limit:200};
   beModFetch(PERF_SEG, params, force ? true : false).then(function(r){
     perfRenderList(r);
@@ -9018,7 +9157,7 @@ function renderPerformance(force){
 }
 
 function perfRenderStatus(r){
-  var el = document.getElementById('perf-status');
+  var el = perfEl('status');
   if(!el) return;
   var h = perfHi(), bits = [];
   if(PERF_MSG) bits.push(PERF_MSG);
@@ -9049,7 +9188,7 @@ function perfAgo(ms){
 
 // ── the list ──────────────────────────────────────────────────────────
 function perfRenderList(r){
-  var el = document.getElementById('perf-list');
+  var el = perfEl('list');
   if(!el) return;
   var h = perfHi();
   var items = (r && r.items) ? r.items : [];
@@ -9094,6 +9233,27 @@ function perfCard(row){
     stats.push(pdStat(h?'लक्ष्य':'Target', perfNumTxt(row['Target']), 'flat'));
     stats.push(pdStat(h?'प्रगति':'Progress', perfNumTxt(row['Progress']), 'flat'));
     stats.push(pdStat('%', perfPctTxt(row['Progress %']), perfTone(row['Progress %'])));
+  } else if(PERF_SEG==='training_module'){
+    head = row['Title'] || '(untitled)';
+    sub  = [row['Category']||'', row['Level']||'', row['Store']||''].filter(function(x){return x;}).join(' · ');
+    stats.push(pdStat(h?'मिनट':'Minutes', perfNumTxt(row['Duration (min)']), 'flat'));
+    stats.push(pdStat(h?'अनिवार्य':'Required', perfBoolTxt(row['Mandatory']), perfBoolTxt(row['Mandatory'])==='✓' ? 'warn' : 'flat'));
+    stats.push(pdStat(h?'सक्रिय':'Active', perfBoolTxt(row['Active']), perfBoolTxt(row['Active'])==='✓' ? 'ok' : 'flat'));
+  } else if(PERF_SEG==='training_progress'){
+    // The course name is looked up in the catalogue rows the server returned.
+    // If the catalogue has not been read yet the raw Module ID is shown rather
+    // than a guessed title.
+    head = perfTrainTitle(row['Module ID']);
+    sub  = [row['Employee']||'', row['Store']||'', row['Status']||''].filter(function(x){return x;}).join(' · ');
+    stats.push(pdStat(h?'प्रगति':'Progress', perfPctTxt(row['Progress %']), perfTone(row['Progress %'])));
+    stats.push(pdStat(h?'अंक':'Score', perfNumTxt(row['Score']), 'flat'));
+    stats.push(pdStat(h?'प्रयास':'Attempts', perfNumTxt(row['Attempts']), 'flat'));
+  } else if(PERF_SEG==='timesheet'){
+    head = row['Activity'] || '(untitled)';
+    sub  = [perfFormVal({type:'date'}, row['Date']), row['Employee']||'', row['Store']||''].filter(function(x){return x;}).join(' · ');
+    stats.push(pdStat(h?'शुरू':'Start', perfTimeTxt(row['Start']), 'flat'));
+    stats.push(pdStat(h?'अंत':'End', perfTimeTxt(row['End']), 'flat'));
+    stats.push(pdStat(h?'कुल मिनट':'Minutes', perfNumTxt(row['Minutes']), 'flat'));
   } else {
     head = row['Title'] || '(untitled)';
     sub  = [row['Role']||'', row['Store']||'', row['Frequency']||''].filter(function(x){return x;}).join(' · ');
@@ -9103,6 +9263,19 @@ function perfCard(row){
   }
   var extra = '';
   if(PERF_SEG==='goal' && row['Status']) extra += pdRow(h?'स्थिति':'Status', String(row['Status']));
+  if(PERF_SEG==='training_progress'){
+    if(row['Module ID'])    extra += pdRow(h?'कोर्स ID':'Course ID', String(row['Module ID']));
+    if(row['Started At'])   extra += pdRow(h?'शुरू किया':'Started', String(row['Started At']));
+    if(row['Completed At']) extra += pdRow(h?'पूरा किया':'Completed', String(row['Completed At']));
+  }
+  if(PERF_SEG==='training_module'){
+    if(row['Roles'])       extra += pdRow(h?'भूमिकाएँ':'Roles', String(row['Roles']));
+    if(row['Content URL']) extra += pdRow(h?'सामग्री':'Content', String(row['Content URL']));
+  }
+  if(PERF_SEG==='timesheet'){
+    if(row['Category']) extra += pdRow(h?'श्रेणी':'Category', String(row['Category']));
+    if(row['Task ID'])  extra += pdRow(h?'कार्य ID':'Task ID', String(row['Task ID']));
+  }
   if(row['Unit'])   extra += pdRow(h?'इकाई':'Unit', String(row['Unit']));
   if(row['Period']) extra += pdRow(h?'अवधि':'Period', String(row['Period']));
   if(row['Note'])   extra += pdRow(h?'टिप्पणी':'Note', String(row['Note']));
@@ -9134,6 +9307,57 @@ function perfBoolTxt(v){
   if(s==='false') return '✗';
   return '—';
 }
+// A clock reading, shown exactly as the sheet holds it. Google Sheets stores a
+// bare time of day as a Date pinned to 30 Dec 1899, so what comes back may be a
+// full ISO timestamp rather than 'HH:MM'. The digits are read literally with the
+// same regex the server uses in beMinsOfDay, never re-parsed through Date(),
+// which would drag the +05:21 Madras offset into a shop-floor clock reading.
+function perfTimeTxt(v){
+  if(v===undefined||v===null||String(v).trim()==='') return '—';
+  var s = String(v);
+  var m = s.match(/\b(\d{1,2}):(\d{2})\b/);
+  if(!m) return s;
+  var hh = Number(m[1]), mm = m[2];
+  if(!isFinite(hh) || hh > 23) return s;
+  return (hh < 10 ? '0'+hh : String(hh)) + ':' + mm;
+}
+// Resolve a course name from the catalogue rows the server actually returned.
+// If the catalogue has not been read yet the raw Module ID is shown — a course
+// title is never guessed, invented or cached from anywhere but a real read.
+// The catalogue rows the server last returned, minus any course explicitly
+// marked inactive. Returns an empty list when nothing has been read yet — the
+// caller then falls back to free text rather than showing an empty picker.
+function perfTrainCourses(){
+  var st = BE_MOD_STATE['training_module'];
+  if(!st || !st.items || !st.items.length) return [];
+  var out = [], i, r;
+  for(i=0;i<st.items.length;i++){
+    r = st.items[i];
+    if(!r) continue;
+    if(beModNorm(r['Active'])==='false') continue;
+    out.push(r);
+  }
+  return out;
+}
+function perfTrainTitle(moduleId){
+  var id = (moduleId===undefined||moduleId===null) ? '' : String(moduleId).trim();
+  if(!id) return '(no course)';
+  var st = BE_MOD_STATE['training_module'];
+  var items = (st && st.items) ? st.items : null;
+  if(items && items.length){
+    var i, r, t;
+    for(i=0;i<items.length;i++){
+      r = items[i];
+      if(!r) continue;
+      if(String(r['ID']||'').trim() === id){
+        t = r['Title'];
+        if(t!==undefined && t!==null && String(t).trim()!=='') return String(t);
+        return id;
+      }
+    }
+  }
+  return id;
+}
 function perfTone(v){
   var n = Number(v);
   if(!isFinite(n) || String(v).trim()==='') return 'flat';
@@ -9160,7 +9384,7 @@ function perfDefaultStore(){
   return (s==='BC' || s==='VKS') ? s : '';
 }
 function perfRenderForm(){
-  var el = document.getElementById('perf-form');
+  var el = perfEl('form');
   if(!el) return;
   var h = perfHi();
   var spec = beModSpec(PERF_SEG);
@@ -9193,10 +9417,10 @@ function perfRenderForm(){
     '<div class="card-title">'+pdEsc((PERF_EDIT ? (h?'बदलें — ':'Edit — ') : (h?'नया — ':'New — '))+spec.label)+'</div>'+
     (PERF_EDIT ? '<div style="font-size:9.5px;color:var(--light);margin:-4px 0 8px">'+pdEsc(PERF_EDIT)+'</div>' : '')+
     rows.join('')+derHtml+
-    '<div id="perf-form-err" style="font-size:11.5px;color:#b91c1c;margin-top:8px"></div>'+
+    '<div id="'+perfPfx()+'-form-err" style="font-size:11.5px;color:#b91c1c;margin-top:8px"></div>'+
     '<div style="display:flex;gap:8px;margin-top:10px">'+
       '<button class="btn" style="flex:1" onclick="perfCancel()">'+(h?'रद्द करें':'Cancel')+'</button>'+
-      '<button class="btn green" id="perf-save-btn" style="flex:2" onclick="perfSave()">✓ '+(h?'सहेजें':'Save')+'</button>'+
+      '<button class="btn green" id="'+perfPfx()+'-save-btn" style="flex:2" onclick="perfSave()">✓ '+(h?'सहेजें':'Save')+'</button>'+
     '</div></div>';
 }
 // A member never types their own name or store — the app fills them in and the
@@ -9212,14 +9436,63 @@ function perfVal(f){
   if(f.def!==undefined && f.def!==null) return f.def;
   return '';
 }
+// Turn whatever the sheet gave back into the exact shape an <input type="date">
+// or <input type="time"> will accept, so editing an existing row never opens
+// with a blank field. New rows are stored as plain text (the server pins those
+// columns), but rows written before that fix — and any cell a person edited in
+// the spreadsheet — come back as an ISO instant instead. Those are converted
+// through the sheet's own timezone, Asia/Kolkata, rather than the device's,
+// because the stored instant is IST midnight and a device in another zone
+// would otherwise read it as the previous day.
+var BE_SHEET_TZ_MIN = 330;   // Asia/Kolkata, matching appsscript.json
+function perfFormVal(f, raw){
+  var s = (raw===undefined||raw===null) ? '' : String(raw);
+  if(s==='') return '';
+  if(f.type==='date'){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    var t = Date.parse(s);
+    if(isNaN(t)) return s;
+    var d = new Date(t + BE_SHEET_TZ_MIN*60000);
+    var mo = d.getUTCMonth()+1, dy = d.getUTCDate();
+    return d.getUTCFullYear()+'-'+(mo<10?'0':'')+mo+'-'+(dy<10?'0':'')+dy;
+  }
+  if(f.type==='time'){
+    var m = s.match(/\b(\d{1,2}):(\d{2})\b/);
+    if(!m) return '';
+    var hh = Number(m[1]);
+    if(!isFinite(hh) || hh > 23) return '';
+    return (hh<10?'0':'')+hh+':'+m[2];
+  }
+  return s;
+}
 function perfField(spec, f){
   var h = perfHi();
-  var id = 'perf-f-'+f.key.replace(/[^A-Za-z0-9]/g, '_');
+  var id = perfPfx()+'-f-'+f.key.replace(/[^A-Za-z0-9]/g, '_');
   var v  = perfVal(f);
   var lbl = '<label style="font-size:10px;color:var(--light);display:block;margin-bottom:3px">'+
     pdEsc(f.key)+(f.required?' <span style="color:#b91c1c">*</span>':'')+'</label>';
   var css = 'padding:8px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff;box-sizing:border-box';
   var input;
+  // The course picker is built only from catalogue rows the server returned.
+  // Until that read succeeds the field stays a plain text box, so a course is
+  // never offered that does not exist on the live sheet.
+  var courses = perfTrainCourses();
+  if(PERF_SEG==='training_progress' && f.key==='Module ID' && courses.length){
+    var copts = ['<option value="">'+(h?'— कोर्स चुनें —':'— select a course —')+'</option>'];
+    var ci, cid, ctitle, cfound = false;
+    for(ci=0;ci<courses.length;ci++){
+      cid = String(courses[ci]['ID']||'');
+      if(!cid) continue;
+      ctitle = String(courses[ci]['Title']||cid);
+      if(cid===String(v)) cfound = true;
+      copts.push('<option value="'+pdEsc(cid)+'"'+(cid===String(v)?' selected':'')+'>'+pdEsc(ctitle)+' · '+pdEsc(cid)+'</option>');
+    }
+    // An ID already on a saved row that is not in the catalogue is kept as its
+    // own option, so editing a progress row can never quietly blank its course.
+    if(v && !cfound) copts.splice(1, 0, '<option value="'+pdEsc(v)+'" selected>'+pdEsc(v)+'</option>');
+    input = '<select id="'+id+'" style="'+css+'" onchange="perfDraft(\'Module ID\', this.value)">'+copts.join('')+'</select>';
+    return '<div style="margin-bottom:9px">'+lbl+input+'</div>';
+  }
   if(f.type==='longtext'){
     input = '<textarea id="'+id+'" rows="3" style="'+css+'" oninput="perfDraft(\''+f.key.replace(/'/g,"\\'")+'\', this.value)">'+pdEsc(v)+'</textarea>';
   } else if(f.type==='enum'){
@@ -9274,12 +9547,12 @@ function perfEdit(id){
   var spec = beModSpec(PERF_SEG);
   if(spec){
     for(var j=0;j<spec.fields.length;j++){
-      var k = spec.fields[j].key;
-      PERF_DRAFT[k] = (row[k]===undefined||row[k]===null) ? '' : String(row[k]);
+      var fj = spec.fields[j];
+      PERF_DRAFT[fj.key] = perfFormVal(fj, row[fj.key]);
     }
   }
   perfRenderForm(); perfRenderConflict(); perfRenderStatus('');
-  try{ document.getElementById('perf-form').scrollIntoView(); }catch(e){}
+  try{ perfEl('form').scrollIntoView(); }catch(e){}
 }
 function perfCancel(){
   PERF_EDIT = null; PERF_DRAFT = {}; PERF_MSG = ''; PERF_CONFLICT = null;
@@ -9307,7 +9580,7 @@ function perfSave(){
   if(hasSource) rec['Source'] = 'app';
 
   var errs = beModValidate(spec, rec);
-  var errEl = document.getElementById('perf-form-err');
+  var errEl = perfEl('form-err');
   if(errs.length){
     var lines = [];
     for(i=0;i<errs.length;i++) lines.push(pdEsc(errs[i].field)+': '+pdEsc(errs[i].msg));
@@ -9317,7 +9590,7 @@ function perfSave(){
   if(errEl) errEl.innerHTML = '';
 
   PERF_BUSY = true;
-  var btn = document.getElementById('perf-save-btn');
+  var btn = perfEl('save-btn');
   if(btn){ btn.disabled = true; btn.textContent = h?'सहेजा जा रहा है…':'Saving…'; }
   PERF_MSG = '<span style="color:var(--light)">'+(h?'सहेजा जा रहा है…':'Saving…')+'</span>';
   perfRenderStatus('');
@@ -9350,7 +9623,7 @@ function perfSave(){
     });
   })['catch'](function(){
     PERF_BUSY = false;
-    var btn2 = document.getElementById('perf-save-btn');
+    var btn2 = perfEl('save-btn');
     if(btn2){ btn2.disabled = false; btn2.textContent = '✓ '+(perfHi()?'सहेजें':'Save'); }
     PERF_MSG = '<span style="color:#b91c1c;font-weight:700">'+
       (perfHi()?'सहेजने में दिक्कत आई — दोबारा कोशिश करें':'Something went wrong while saving — please try again')+'</span>';
@@ -9359,7 +9632,7 @@ function perfSave(){
 }
 
 function perfRenderConflict(){
-  var el = document.getElementById('perf-conflict');
+  var el = perfEl('conflict');
   if(!el) return;
   if(!PERF_CONFLICT){ el.innerHTML=''; return; }
   var h = perfHi();
