@@ -3547,6 +3547,7 @@ function beModuleSheet(ss, m) {
   if (sh.getLastRow() === 0) {
     appendRow(sh, want);
     try { styleHeader(sh); } catch (e) {}
+    beApplyTextFormat(sh, m);
     return sh;
   }
   const lastCol = sh.getLastColumn();
@@ -3555,8 +3556,58 @@ function beModuleSheet(ss, m) {
   if (missing.length) {
     sh.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
     try { styleHeader(sh); } catch (e) {}
+    beResetTextFormatMark(m);
   }
+  beApplyTextFormat(sh, m);
   return sh;
+}
+
+// ── Text columns must stay text ───────────────────────────────────────
+// Live defect found during the post-deployment battery: a KPI saved with
+// Period "2026-07" came back from the sheet as 2026-06-30T18:30:00.000Z.
+// Nothing in this code changed it — Google Sheets auto-typed the string as
+// a date on write, then handed back a Date object shifted by IST. Any text
+// a person can type is exposed to this: "2026-07", "Q1", "1/2", "5-6", a
+// phone number, an ID like "10-2". §6 forbids silently altering what the
+// user saved, so every text-ish column on a module sheet is pinned to the
+// plain-text number format ('@') and Sheets stores the literal string.
+//
+// Applied once per sheet per format version and remembered in Script
+// Properties, so ordinary reads and writes do not pay for it every call.
+const BE_FMT_PROP_PREFIX = 'BE_TXTFMT_';
+const BE_FMT_VERSION = 'v1';
+
+function beTextHeaders(m) {
+  // ID and the audit columns are stored as literal strings too — an ID or a
+  // timestamp re-typed as a date would break dedupe and conflict detection.
+  const out = ['ID', 'Created At', 'Created By', 'Updated At', 'Updated By'];
+  m.fields.forEach(function (f) {
+    if (f.t === 'text' || f.t === 'longtext' || f.t === 'enum') out.push(f.k);
+  });
+  return out;
+}
+
+function beResetTextFormatMark(m) {
+  try { PropertiesService.getScriptProperties().deleteProperty(BE_FMT_PROP_PREFIX + m.sheet); } catch (e) {}
+}
+
+function beApplyTextFormat(sh, m) {
+  let props;
+  try { props = PropertiesService.getScriptProperties(); } catch (e) { return; }
+  const key = BE_FMT_PROP_PREFIX + m.sheet;
+  try { if (props.getProperty(key) === BE_FMT_VERSION) return; } catch (e) { return; }
+
+  const lastCol = sh.getLastColumn();
+  if (lastCol < 1) return;
+  const have = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  const maxRows = typeof sh.getMaxRows === 'function' ? sh.getMaxRows() : Math.max(2, sh.getLastRow());
+  const rows = Math.max(1, maxRows - 1);
+  beTextHeaders(m).forEach(function (h) {
+    const c = have.indexOf(h);
+    if (c < 0) return;
+    try { sh.getRange(2, c + 1, rows, 1).setNumberFormat('@'); } catch (e) {}
+  });
+  try { props.setProperty(key, BE_FMT_VERSION); } catch (e) {}
 }
 
 // Header name → column index, read from the live sheet rather than assumed.
