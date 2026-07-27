@@ -2711,7 +2711,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '8.0-dash';
+var APP_VERSION = '8.1-backend';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -5731,6 +5731,32 @@ function pdCacheSave(payload){
     }));
   }catch(e){}
 }
+// A refused dashboard must tell the user what to DO, not print a machine
+// reason code at them. The one that matters in daily use is 'pin_required':
+// the server now refuses a Manager/PC/Owner account that has no PIN on file
+// (an account with that much reach must prove who it is), and the remedy is
+// already built into the app — log out, pick your name, and the login screen
+// offers first-time PIN creation.
+function pdReasonMsg(reason){
+  var h = pdHi();
+  var r = String(reason||'');
+  if(r==='pin_required')
+    return h ? 'सुरक्षा के लिए आपके खाते पर 4-अंकों का PIN ज़रूरी है। ऊपर अपने नाम पर टैप करें → Logout, फिर दोबारा login करके नया PIN बनाएं।'
+             : 'Your account needs a 4-digit PIN for security. Tap your name at the top → Logout, then log in again to create it.';
+  if(r==='auth_failed')
+    return h ? 'PIN मेल नहीं खाया। ऊपर अपने नाम पर टैप करें → Logout, फिर सही PIN से login करें।'
+             : 'PIN did not match. Tap your name at the top → Logout, then log in again with the correct PIN.';
+  if(r==='bad_token')
+    return h ? 'सेशन खत्म हो गया — दोबारा login करें।'
+             : 'Your session has expired — please log in again.';
+  if(r==='inactive_user')
+    return h ? 'यह खाता निष्क्रिय कर दिया गया है — Owner से संपर्क करें।'
+             : 'This account has been deactivated — please contact the owner.';
+  if(r==='unknown_user' || r==='no_user')
+    return h ? 'आपका नाम स्टाफ लिस्ट में नहीं मिला — Owner से इसे जुड़वाएं।'
+             : 'Your name was not found in the staff list — ask the owner to add it.';
+  return h ? ('पहुँच अस्वीकृत: '+r) : ('Access denied: '+r);
+}
 // Local-first: a cached payload is shown immediately (clearly labelled with
 // its age) and the network copy replaces it when it lands. A failed fetch
 // never blanks the screen and never blocks the rest of the app.
@@ -5758,7 +5784,7 @@ function fetchPersonaDashboard(force){
         if(done) return; done = true; clearTimeout(timer); BE_DASH.loading = false;
         if(!j || j.status!=='ok'){
           BE_DASH.err = (j && j.reason)
-            ? (pdHi()?('पहुँच अस्वीकृत: '+j.reason):('Access denied: '+j.reason))
+            ? pdReasonMsg(j.reason)
             : (pdHi()?'डैशबोर्ड लोड नहीं हुआ':'Dashboard could not be loaded');
           resolve(BE_DASH.data); return;
         }
