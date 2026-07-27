@@ -121,6 +121,15 @@ function doPost(e) {
       return jsonResp(result);
     }
 
+    // module (Phase 5 §§9–18): the generic validated writer. One code path for
+    // every declared module — see BE_MODULES. No All-Records log, no email:
+    // these are structured records with their own sheets and audit columns.
+    if (type === 'module') {
+      const mres = handleModuleWrite(ss, d, now);
+      logCid(ss, cid, type, d);
+      return jsonResp(mres);
+    }
+
     logRecord(ss, d, now);
     logCid(ss, cid, type, d);
     if (SEND_EMAIL_ALERTS) sendEmailAlert(d, type, now);
@@ -257,7 +266,36 @@ function doGet(e) {
     // anything the client sends. See getDashboardEndpoint for why.
     //   ?action=dashboard&user=<name>&hash=<pinHash>&date=<yyyy-mm-dd>
     if (action === 'dashboard') {
-      return getDashboardEndpoint(ss, safeParam(e,'user'), safeParam(e,'hash'), safeParam(e,'date'));
+      return getDashboardEndpoint(ss, safeParam(e,'user'), safeParam(e,'hash'), safeParam(e,'date'),
+                                  safeParam(e,'token'));
+    }
+
+    // ── Phase 5 backend: sessions ───────────────────────────────────────
+    // Trades a verified PIN for a short-lived signed token so the PIN hash
+    // stops travelling in every query string. See beSessionEndpoint.
+    //   ?action=session&user=<name>&hash=<pinHash>
+    if (action === 'session') {
+      return beSessionEndpoint(ss, safeParam(e,'user'), safeParam(e,'hash'));
+    }
+
+    // ── Phase 5 backend: the generic module reader and registry ──────────
+    //   ?action=module&name=kpi&user=<name>&hash=<pinHash>[&employee=][&store=]
+    //                 [&from=yyyy-mm-dd][&to=yyyy-mm-dd][&since=<iso>][&limit=]
+    //   ?action=modules&user=<name>&hash=<pinHash>   → field specs the caller may see
+    if (action === 'module') {
+      return getModuleEndpoint(ss, safeParam(e,'name'), e.parameter || {});
+    }
+    if (action === 'modules') {
+      return getModuleRegistryEndpoint(ss, e.parameter || {});
+    }
+
+    // Owner-gated scripted removal of ZZTEST- smoke-test records (§7).
+    if (action === 'cleanupTest') {
+      return beCleanupTestRecords(safeParam(e,'ownerKey'));
+    }
+    // Owner-gated: invalidate every outstanding session token at once.
+    if (action === 'revokeSessions') {
+      return beRevokeAllSessions(safeParam(e,'ownerKey'));
     }
 
     // Phase 0: read-back verification — did submission <cid> actually land?
@@ -1965,21 +2003,18 @@ function buildState(ss, date, storeFilter) {
 
 const DASH_STORES = ['BC','VKS'];
 
-function dashScope(ss, name, hash) {
-  const u = findUser(ss, name);
-  if (!u) return { ok:false, reason:'unknown_user' };
-  if (String(u.active||'Yes').toLowerCase() === 'no') return { ok:false, reason:'inactive_user' };
-  if (u.hash) {
-    if (!hash || String(hash) !== u.hash) return { ok:false, reason:'auth_failed' };
-  }
-  // Mirrors the client's getAccessLevel() exactly, so the interface and the
-  // data response can never disagree about what this person is allowed to see.
-  const roles = String(u.role||'');
-  let scope = 'member';
-  if (roles.indexOf('Owner') >= 0) scope = 'owner';
-  else if (roles.indexOf('Manager') >= 0 || roles.indexOf('PC') >= 0) scope = 'manager';
-  return { ok:true, scope:scope, name:u.name, store:String(u.store||''), roles:roles,
-           pinRequired: !!u.hash };
+// Phase 5 backend: this now delegates to beAuth(), the one authenticator every
+// endpoint shares. The return shape is unchanged — { ok, scope, name, store,
+// roles, pinRequired } — so buildDashboard and everything downstream is
+// untouched. What changes is the answer in exactly one case: a Manager, PC or
+// Owner account with NO PIN on file is refused with reason 'pin_required'
+// instead of being admitted on the strength of its name. Members are
+// unaffected, so nobody who could log in yesterday loses access today.
+function dashScope(ss, name, hash, token) {
+  const a = beAuth(ss, name, hash, token);
+  if (!a.ok) return { ok:false, reason:a.reason };
+  return { ok:true, scope:a.scope, name:a.name, store:a.store, roles:a.roles,
+           pinRequired: a.pinRequired };
 }
 
 function dashStoresFor(sc) {
@@ -2519,8 +2554,8 @@ function buildDashboard(ss, sc, date) {
   return base;
 }
 
-function getDashboardEndpoint(ss, name, hash, date) {
-  const sc = dashScope(ss, name, hash);
+function getDashboardEndpoint(ss, name, hash, date, token) {
+  const sc = dashScope(ss, name, hash, token);
   if (!sc.ok) {
     // Refused, not downgraded. The response carries no business data at all.
     return jsonResp({ status:'error', reason:sc.reason, message:'dashboard access denied' });
@@ -2971,7 +3006,13 @@ function createAllSheets() {
     SH.SOCIAL_EXEC, SH.BILLING_EXEC, SH.BILLING_CUST,
     SH.INVENTORY, SH.CRM, SH.BDA,
     SH.DAILY_TRAINING, SH.SALESMAN, SH.POINTS,
-    SH.APPDATA
+    SH.APPDATA,
+    // Phase 5 §§9–12 module sheets. Listed so a fresh setup provisions them
+    // and the Owner is never asked to create a sheet by hand (§1). The module
+    // layer also creates each on first use, so this is belt and braces, not a
+    // prerequisite — and insertSheet is skipped when the sheet already exists.
+    SH_MOD.KRA, SH_MOD.KPI, SH_MOD.GOALS,
+    SH_MOD.TRAIN_MOD, SH_MOD.TRAIN_PROG, SH_MOD.TIMESHEET
   ];
   allSheets.forEach(name => {
     const exists = !!ss.getSheetByName(name);
@@ -3142,4 +3183,711 @@ function testNewSheetsSubmission() {
 
   Logger.log('✅ v5.0 test submissions complete!');
   Logger.log('📊 Check: Social Media Exec, Billing Exec Summary, Billing Customers, Inventory, CRM, BDA, Daily Training (10-min), Salesman Closing, Points Log');
+}
+
+
+// ══════════════════════════════════════════════════════════════════════
+// PHASE 5 BACKEND — PART A: IDENTITY, SESSIONS AND ONE AUTHENTICATOR
+//
+// Why this exists.
+//
+// dashScope() used to check the PIN hash only when a PIN was on file:
+//
+//     if (u.hash) { if (!hash || hash !== u.hash) return auth_failed; }
+//
+// An account with no PIN therefore authenticated on the strength of its name
+// alone. For a shop-floor member that is the historical behaviour and is not
+// worth breaking — their own data is all they can reach. For an account that
+// carries Manager, PC or Owner reach it is a hole: anyone who knows that the
+// manager of VKS is called Kundan could read the whole store's dashboard by
+// typing his name. beAuth() below closes that case and only that case.
+//
+// The second half is the query-string problem. A PIN hash travelling in a GET
+// URL lands in browser history, in any proxy log and in the Referer header of
+// anything the page later loads. beIssueSession() trades a verified PIN for a
+// short-lived signed token so the hash crosses the wire once, at login, and
+// never again. The token is stateless — an HMAC over {name, expiry} keyed by a
+// secret held in Script Properties — so there is no session table to grow, no
+// cleanup job, and revoking every outstanding token is one property delete.
+//
+// Nothing here removes the old path. A client that still sends name+hash keeps
+// working exactly as before, which is what §1's backward-compatibility rule and
+// the queued offline requests on people's phones require.
+// ══════════════════════════════════════════════════════════════════════
+
+const BE_TOKEN_TTL_MS   = 12 * 60 * 60 * 1000;   // 12h — one working day plus slack
+const BE_SECRET_PROP    = 'BE_TOKEN_SECRET';
+
+function beSecret() {
+  const p = PropertiesService.getScriptProperties();
+  let s = p.getProperty(BE_SECRET_PROP);
+  if (!s) {
+    // Generated on first use so the secret never has to live in source control.
+    s = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+    p.setProperty(BE_SECRET_PROP, s);
+  }
+  return s;
+}
+
+function beSign(b64payload) {
+  const raw = Utilities.computeHmacSha256Signature(String(b64payload), beSecret());
+  return Utilities.base64EncodeWebSafe(raw);
+}
+
+function beMakeToken(name, ttlMs) {
+  const payload = JSON.stringify({ n: String(name), e: Date.now() + (ttlMs || BE_TOKEN_TTL_MS) });
+  const b = Utilities.base64EncodeWebSafe(Utilities.newBlob(payload).getBytes());
+  return b + '.' + beSign(b);
+}
+
+function beReadToken(token) {
+  const t = String(token || '');
+  const i = t.indexOf('.');
+  if (i <= 0) return null;
+  const b = t.slice(0, i), sig = t.slice(i + 1);
+  let expected;
+  try { expected = beSign(b); } catch (e) { return null; }
+  if (expected !== sig) return null;
+  let payload;
+  try {
+    payload = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(b)).getDataAsString());
+  } catch (e) { return null; }
+  if (!payload || !payload.n || !payload.e) return null;
+  if (Date.now() > Number(payload.e)) return null;
+  return { name: String(payload.n), exp: Number(payload.e) };
+}
+
+// Role string → scope. Kept as one function so the dashboard, the module
+// endpoints and any future reader can never disagree about what a role means.
+function beScopeOf(roles) {
+  const r = String(roles || '');
+  if (r.indexOf('Owner') >= 0) return 'owner';
+  if (r.indexOf('Manager') >= 0 || r.indexOf('PC') >= 0) return 'manager';
+  return 'member';
+}
+const BE_SCOPE_RANK = { member: 1, manager: 2, owner: 3 };
+function beScopeAtLeast(have, need) {
+  return (BE_SCOPE_RANK[have] || 0) >= (BE_SCOPE_RANK[need] || 0);
+}
+
+// THE authenticator. Every Phase 5 endpoint goes through this and nothing else.
+// Returns { ok:false, reason } or { ok:true, scope, name, store, roles, via }.
+function beAuth(ss, name, hash, token) {
+  let who = String(name || '').trim();
+  let via = 'hash';
+
+  if (token) {
+    const t = beReadToken(token);
+    if (!t) return { ok: false, reason: 'bad_token' };
+    who = t.name;
+    via = 'token';
+  }
+  if (!who) return { ok: false, reason: 'no_user' };
+
+  const u = findUser(ss, who);
+  if (!u) return { ok: false, reason: 'unknown_user' };
+  if (String(u.active || 'Yes').toLowerCase() === 'no') return { ok: false, reason: 'inactive_user' };
+
+  const scope = beScopeOf(u.role);
+
+  if (via === 'hash') {
+    if (u.hash) {
+      if (!hash || String(hash) !== u.hash) return { ok: false, reason: 'auth_failed' };
+    } else if (scope !== 'member') {
+      // The gap described at the top of this section. A manager or owner account
+      // with no PIN on file is refused rather than waved through. The remedy is
+      // in the user's own hands and already built: the app's first-time PIN
+      // enrolment (set_pin with no ownerKey) works for exactly this case.
+      return { ok: false, reason: 'pin_required' };
+    }
+  }
+
+  return {
+    ok: true, scope: scope, name: u.name, store: String(u.store || ''),
+    roles: String(u.role || ''), via: via, pinRequired: !!u.hash
+  };
+}
+
+// ?action=session&user=<name>&hash=<pinHash>
+// Trades a verified PIN for a signed token. Deliberately strict: no PIN on file
+// means no token, for every role. Members without a PIN keep using the existing
+// name-only path, so nobody loses access they had yesterday.
+function beSessionEndpoint(ss, name, hash) {
+  const who = String(name || '').trim();
+  if (!who) return jsonResp({ status: 'ok', ok: false, reason: 'no_user' });
+  const u = findUser(ss, who);
+  if (!u) return jsonResp({ status: 'ok', ok: false, reason: 'unknown_user' });
+  if (String(u.active || 'Yes').toLowerCase() === 'no') return jsonResp({ status: 'ok', ok: false, reason: 'inactive_user' });
+  if (!u.hash) return jsonResp({ status: 'ok', ok: false, reason: 'pin_required' });
+  if (!hash || String(hash) !== u.hash) return jsonResp({ status: 'ok', ok: false, reason: 'auth_failed' });
+  const token = beMakeToken(u.name, BE_TOKEN_TTL_MS);
+  return jsonResp({
+    status: 'ok', ok: true, token: token,
+    expiresAt: new Date(Date.now() + BE_TOKEN_TTL_MS).toISOString(),
+    scope: beScopeOf(u.role), name: u.name, store: String(u.store || '')
+  });
+}
+
+// Invalidates every outstanding token at once by rotating the signing secret.
+// Owner-only, and reachable only with the owner reset key the app already uses.
+function beRevokeAllSessions(ownerKey) {
+  if (!ownerKey || ownerKey !== OWNER_KEY_HASH) return jsonResp({ status: 'error', message: 'not_authorised' });
+  PropertiesService.getScriptProperties().deleteProperty(BE_SECRET_PROP);
+  return jsonResp({ status: 'ok', ok: true, revoked: true });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PHASE 5 BACKEND — PART B: THE MODULE DATA LAYER
+//
+// §5 asks for ten more modules. Writing ten bespoke handlers would give ten
+// slightly different ideas of what validation, conflict handling and access
+// control mean, and the tenth would be the weakest. Instead each module is a
+// declaration — sheet name, field specs, who may read, who may write, whose
+// row it is — and one writer and one reader implement the rules for all of
+// them. New modules become data, not code, which is what makes the remaining
+// §§13–18 tractable.
+//
+// Every rule §1 demands is implemented once, here:
+//   • validation            — beValidate(), per-field, with a real message
+//   • timestamp conflict    — last-write-wins on Updated At, stale writes are
+//                             REPORTED as skipped rather than silently dropped
+//   • retry handling        — the existing cid dedupe in doPost covers this
+//   • offline queue         — writes arrive as ordinary form-urlencoded posts
+//                             through sendToSheets(), so a queued write from an
+//                             old app version still lands
+//   • meaningful errors     — {status:'error', field, message}, never a bare 500
+//   • additive only         — sheets are created on demand and missing header
+//                             columns are appended; nothing is renamed, moved
+//                             or removed, ever
+// ══════════════════════════════════════════════════════════════════════
+
+const SH_MOD = {
+  KRA        : 'KRA Definitions',
+  KPI        : 'KPI Entries',
+  GOALS      : 'Goals',
+  TRAIN_MOD  : 'Training Modules',
+  TRAIN_PROG : 'Training Progress',
+  TIMESHEET  : 'Timesheet Entries'
+};
+
+// Field spec types:
+//   text | longtext | int | num | pct | date | time | bool | enum | ref
+// 'own' marks the column that identifies whose record this is; a member may
+// only write rows where that column holds their own name.
+const BE_MODULES = {
+
+  // ── §9 KRA / KPI / GOALS ────────────────────────────────────────────
+  kra: {
+    sheet: SH_MOD.KRA, idPrefix: 'KRA', label: 'KRA Definition',
+    write: 'manager', read: 'member', own: null, storeField: 'Store',
+    fields: [
+      { k: 'Store',       t: 'text',     max: 20 },
+      { k: 'Role',        t: 'text',     max: 80 },
+      { k: 'Title',       t: 'text',     max: 200, required: true },
+      { k: 'Description', t: 'longtext', max: 2000 },
+      { k: 'Weight %',    t: 'pct' },
+      { k: 'Measure',     t: 'text',     max: 200 },
+      { k: 'Target',      t: 'num' },
+      { k: 'Unit',        t: 'text',     max: 30 },
+      { k: 'Frequency',   t: 'enum',     values: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'] },
+      { k: 'Active',      t: 'bool',     def: true }
+    ]
+  },
+
+  kpi: {
+    sheet: SH_MOD.KPI, idPrefix: 'KPI', label: 'KPI Entry',
+    write: 'member', read: 'member', own: 'Employee', storeField: 'Store',
+    dateField: 'Date',
+    fields: [
+      { k: 'Date',     t: 'date', required: true },
+      { k: 'Store',    t: 'text', max: 20 },
+      { k: 'Employee', t: 'text', max: 80, required: true },
+      { k: 'KRA ID',   t: 'text', max: 40 },
+      { k: 'KPI',      t: 'text', max: 200, required: true },
+      { k: 'Target',   t: 'num' },
+      { k: 'Actual',   t: 'num' },
+      { k: 'Unit',     t: 'text', max: 30 },
+      { k: 'Period',   t: 'text', max: 20 },
+      { k: 'Note',     t: 'longtext', max: 1000 },
+      { k: 'Source',   t: 'text', max: 40 }
+    ],
+    // Achievement is DERIVED from the two numbers actually submitted. It is not
+    // stored from the client, so it can never disagree with its own inputs, and
+    // when there is no target it stays blank rather than becoming a fake 0%.
+    derive: function (rec) {
+      const tg = Number(rec['Target']), ac = Number(rec['Actual']);
+      rec['Achievement %'] = (isFinite(tg) && tg > 0 && isFinite(ac))
+        ? Math.round((ac / tg) * 1000) / 10 : '';
+      return rec;
+    },
+    derived: ['Achievement %']
+  },
+
+  goal: {
+    sheet: SH_MOD.GOALS, idPrefix: 'GOAL', label: 'Goal',
+    write: 'member', read: 'member', own: 'Employee', storeField: 'Store',
+    dateField: 'Due Date',
+    fields: [
+      { k: 'Store',       t: 'text', max: 20 },
+      { k: 'Employee',    t: 'text', max: 80, required: true },
+      { k: 'Title',       t: 'text', max: 200, required: true },
+      { k: 'Description', t: 'longtext', max: 2000 },
+      { k: 'Type',        t: 'enum', values: ['individual', 'functional', 'store', 'company'], def: 'individual' },
+      { k: 'Period',      t: 'text', max: 20 },
+      { k: 'Start Date',  t: 'date' },
+      { k: 'Due Date',    t: 'date' },
+      { k: 'Target',      t: 'num' },
+      { k: 'Unit',        t: 'text', max: 30 },
+      { k: 'Progress',    t: 'num' },
+      { k: 'Status',      t: 'enum', values: ['not_started', 'in_progress', 'at_risk', 'achieved', 'missed', 'cancelled'], def: 'not_started' },
+      { k: 'Set By',      t: 'text', max: 80 }
+    ],
+    derive: function (rec) {
+      const tg = Number(rec['Target']), pr = Number(rec['Progress']);
+      rec['Progress %'] = (isFinite(tg) && tg > 0 && isFinite(pr))
+        ? Math.round((pr / tg) * 1000) / 10 : '';
+      return rec;
+    },
+    derived: ['Progress %']
+  },
+
+  // ── §10 TRAINING ────────────────────────────────────────────────────
+  training_module: {
+    sheet: SH_MOD.TRAIN_MOD, idPrefix: 'TRN', label: 'Training Module',
+    write: 'manager', read: 'member', own: null, storeField: 'Store',
+    fields: [
+      { k: 'Title',          t: 'text', max: 200, required: true },
+      { k: 'Category',       t: 'text', max: 80 },
+      { k: 'Description',    t: 'longtext', max: 2000 },
+      { k: 'Duration (min)', t: 'int' },
+      { k: 'Level',          t: 'enum', values: ['basic', 'intermediate', 'advanced'], def: 'basic' },
+      { k: 'Content URL',    t: 'text', max: 500 },
+      { k: 'Roles',          t: 'text', max: 200 },
+      { k: 'Store',          t: 'text', max: 20 },
+      { k: 'Mandatory',      t: 'bool', def: false },
+      { k: 'Active',         t: 'bool', def: true }
+    ]
+  },
+
+  training_progress: {
+    sheet: SH_MOD.TRAIN_PROG, idPrefix: 'TRP', label: 'Training Progress',
+    write: 'member', read: 'member', own: 'Employee', storeField: 'Store',
+    fields: [
+      { k: 'Module ID',    t: 'text', max: 40, required: true },
+      { k: 'Employee',     t: 'text', max: 80, required: true },
+      { k: 'Store',        t: 'text', max: 20 },
+      { k: 'Status',       t: 'enum', values: ['not_started', 'in_progress', 'completed'], def: 'not_started' },
+      { k: 'Progress %',   t: 'pct' },
+      { k: 'Started At',   t: 'text', max: 40 },
+      { k: 'Completed At', t: 'text', max: 40 },
+      { k: 'Score',        t: 'num' },
+      { k: 'Attempts',     t: 'int' },
+      { k: 'Note',         t: 'longtext', max: 1000 }
+    ]
+  },
+
+  // ── §12 TIMESHEET ───────────────────────────────────────────────────
+  timesheet: {
+    sheet: SH_MOD.TIMESHEET, idPrefix: 'TS', label: 'Timesheet Entry',
+    write: 'member', read: 'member', own: 'Employee', storeField: 'Store',
+    dateField: 'Date',
+    fields: [
+      { k: 'Date',     t: 'date', required: true },
+      { k: 'Employee', t: 'text', max: 80, required: true },
+      { k: 'Store',    t: 'text', max: 20 },
+      { k: 'Task ID',  t: 'text', max: 40 },
+      { k: 'Activity', t: 'text', max: 200, required: true },
+      { k: 'Category', t: 'text', max: 80 },
+      { k: 'Start',    t: 'time' },
+      { k: 'End',      t: 'time' },
+      { k: 'Note',     t: 'longtext', max: 1000 },
+      { k: 'Source',   t: 'text', max: 40 }
+    ],
+    // Minutes are computed from the two clock readings rather than trusted from
+    // the client, so a timesheet can never report more time than its own start
+    // and end allow. An overnight span is treated as crossing midnight, which
+    // is real for a closing shift, not as a negative duration.
+    derive: function (rec) {
+      const a = beMinsOfDay(rec['Start']), b = beMinsOfDay(rec['End']);
+      if (a === null || b === null) { rec['Minutes'] = ''; return rec; }
+      let m = b - a;
+      if (m < 0) m += 24 * 60;
+      rec['Minutes'] = m;
+      return rec;
+    },
+    derived: ['Minutes']
+  }
+};
+
+// Audit columns every module carries. Appended after the declared fields and
+// the derived ones so a module's own columns keep the order it declared.
+const BE_AUDIT_COLS = ['Created At', 'Created By', 'Updated At', 'Updated By'];
+
+function beModuleHeaders(m) {
+  return ['ID'].concat(m.fields.map(f => f.k), m.derived || [], BE_AUDIT_COLS);
+}
+
+function beMinsOfDay(v) {
+  const s = String(v === undefined || v === null ? '' : v).trim();
+  if (!s) return null;
+  const mm = s.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (!mm) return null;
+  const h = Number(mm[1]), n = Number(mm[2]);
+  if (!(h >= 0 && h <= 23 && n >= 0 && n <= 59)) return null;
+  return h * 60 + n;
+}
+
+// Create on demand and widen additively. An existing sheet is never rewritten:
+// if columns are missing they are appended to the right of what is already
+// there, and if a human has added their own column in between, it stays.
+function beModuleSheet(ss, m) {
+  let sh = ss.getSheetByName(m.sheet);
+  if (!sh) sh = ss.insertSheet(m.sheet);
+  const want = beModuleHeaders(m);
+  if (sh.getLastRow() === 0) {
+    appendRow(sh, want);
+    try { styleHeader(sh); } catch (e) {}
+    return sh;
+  }
+  const lastCol = sh.getLastColumn();
+  const have = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  const missing = want.filter(h => have.indexOf(h) < 0);
+  if (missing.length) {
+    sh.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+    try { styleHeader(sh); } catch (e) {}
+  }
+  return sh;
+}
+
+// Header name → column index, read from the live sheet rather than assumed.
+// This is the same lesson the Attendance sheet taught: a header row that has
+// drifted from the writer's idea of it must not silently corrupt data.
+function beHeaderMap(sh) {
+  const map = {};
+  if (sh.getLastRow() < 1) return map;
+  const row = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
+  for (let i = 0; i < row.length; i++) {
+    const h = String(row[i] || '').trim();
+    if (h && map[h] === undefined) map[h] = i;
+  }
+  return map;
+}
+
+// ── Validation ────────────────────────────────────────────────────────
+// Returns { ok:true, value } or { ok:false, message }. Every rejection names
+// the field and says what was wrong, because "invalid input" costs a support
+// call and "Weight % must be between 0 and 100" does not.
+function beValidateField(f, raw) {
+  const has = !(raw === undefined || raw === null || String(raw).trim() === '');
+  if (!has) {
+    if (f.required) return { ok: false, message: f.k + ' is required' };
+    return { ok: true, value: (f.def === undefined ? '' : f.def) };
+  }
+  const s = String(raw).trim();
+
+  switch (f.t) {
+    case 'text':
+    case 'longtext': {
+      const max = f.max || 500;
+      if (s.length > max) return { ok: false, message: f.k + ' is too long (' + s.length + ' characters, maximum ' + max + ')' };
+      return { ok: true, value: s };
+    }
+    case 'int': {
+      if (!/^-?\d+$/.test(s)) return { ok: false, message: f.k + ' must be a whole number' };
+      return { ok: true, value: parseInt(s, 10) };
+    }
+    case 'num': {
+      const n = Number(s);
+      if (!isFinite(n)) return { ok: false, message: f.k + ' must be a number' };
+      return { ok: true, value: n };
+    }
+    case 'pct': {
+      const n = Number(s);
+      if (!isFinite(n)) return { ok: false, message: f.k + ' must be a number' };
+      if (n < 0 || n > 100) return { ok: false, message: f.k + ' must be between 0 and 100' };
+      return { ok: true, value: n };
+    }
+    case 'date': {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return { ok: false, message: f.k + ' must be a date in yyyy-mm-dd form' };
+      const d = new Date(s + 'T00:00:00Z');
+      if (isNaN(d.getTime())) return { ok: false, message: f.k + ' is not a real date' };
+      return { ok: true, value: s };
+    }
+    case 'time': {
+      if (beMinsOfDay(s) === null) return { ok: false, message: f.k + ' must be a time in hh:mm form' };
+      const mm = s.match(/\b(\d{1,2}):(\d{2})\b/);
+      return { ok: true, value: (mm[1].length === 1 ? '0' : '') + mm[1] + ':' + mm[2] };
+    }
+    case 'bool': {
+      const t = s.toLowerCase();
+      if (['true', 'yes', '1', 'y'].indexOf(t) >= 0) return { ok: true, value: true };
+      if (['false', 'no', '0', 'n'].indexOf(t) >= 0) return { ok: true, value: false };
+      return { ok: false, message: f.k + ' must be yes or no' };
+    }
+    case 'enum': {
+      const t = s.toLowerCase();
+      const hit = (f.values || []).filter(v => String(v).toLowerCase() === t);
+      if (!hit.length) return { ok: false, message: f.k + ' must be one of: ' + (f.values || []).join(', ') };
+      return { ok: true, value: hit[0] };
+    }
+    default:
+      return { ok: true, value: s };
+  }
+}
+
+function beValidate(m, obj) {
+  const rec = {}, errors = [];
+  m.fields.forEach(function (f) {
+    const r = beValidateField(f, obj[f.k]);
+    if (!r.ok) errors.push({ field: f.k, message: r.message });
+    else rec[f.k] = r.value;
+  });
+  return { ok: errors.length === 0, rec: rec, errors: errors };
+}
+
+function beNewId(prefix) {
+  return prefix + '-' + Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyyMMdd') + '-' +
+         Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase();
+}
+
+// ── Writer ────────────────────────────────────────────────────────────
+// POST: type_=module & module=<key> & rec=<json> & user=<name>
+//       & hash=<pinHash>|token=<token> & updatedAt=<iso> & cid=<cid>
+function handleModuleWrite(ss, d, now) {
+  const key = String(d.module || '').trim();
+  const m = BE_MODULES[key];
+  if (!m) return { status: 'error', message: 'unknown module: ' + (key || '(none)') };
+
+  const auth = beAuth(ss, d.user || d.actor || d.name, d.hash, d.token);
+  if (!auth.ok) return { status: 'error', reason: auth.reason, message: 'not authorised (' + auth.reason + ')' };
+  if (!beScopeAtLeast(auth.scope, m.write)) {
+    return { status: 'error', reason: 'forbidden',
+             message: m.label + ' may only be saved by ' + m.write + ' level and above' };
+  }
+
+  let obj;
+  try { obj = JSON.parse(String(d.rec || '{}')); } catch (e) { return { status: 'error', message: 'rec is not valid JSON' }; }
+  if (!obj || typeof obj !== 'object') return { status: 'error', message: 'rec must be an object' };
+
+  const v = beValidate(m, obj);
+  if (!v.ok) {
+    return { status: 'error', reason: 'validation', errors: v.errors,
+             field: v.errors[0].field, message: v.errors[0].message };
+  }
+  let rec = v.rec;
+
+  // A member may only write their own row. This is enforced on the value that
+  // is about to be stored, not on what the client claimed, and it is checked
+  // against the identity the SERVER resolved — not a name in the payload.
+  if (m.own && auth.scope === 'member') {
+    if (String(rec[m.own] || '').trim() !== String(auth.name).trim()) {
+      return { status: 'error', reason: 'forbidden',
+               message: 'You can only save your own ' + m.label.toLowerCase() };
+    }
+  }
+  // A manager is confined to their own store on store-scoped modules.
+  if (m.storeField && auth.scope === 'manager') {
+    const allowed = dashStoresFor(auth);
+    const st = String(rec[m.storeField] || '').trim();
+    if (st && allowed.indexOf(st) < 0) {
+      return { status: 'error', reason: 'forbidden', message: 'That record belongs to another store' };
+    }
+  }
+
+  if (typeof m.derive === 'function') rec = m.derive(rec);
+
+  const incomingAt = isoOrEmpty(d.updatedAt) || new Date().toISOString();
+  const id = String(obj.ID || obj.id || d.id || '').trim() || beNewId(m.idPrefix);
+
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(8000); } catch (e) { return { status: 'error', reason: 'busy', message: 'server busy, please retry' }; }
+  try {
+    const sh = beModuleSheet(ss, m);
+    const H = beHeaderMap(sh);
+    // beModuleSheet() has just guaranteed every header this module needs exists,
+    // so the live column count is the authoritative width. Reading or writing
+    // past it would either throw or silently create ragged rows.
+    const width = Math.max(1, sh.getLastColumn());
+    const last = sh.getLastRow();
+
+    let rowIndex = 0, existing = null;
+    if (last >= 2 && H['ID'] !== undefined) {
+      const ids = sh.getRange(2, 1, last - 1, width).getValues();
+      for (let i = 0; i < ids.length; i++) {
+        if (String(ids[i][H['ID']]).trim() === id) { rowIndex = i + 2; existing = ids[i]; break; }
+      }
+    }
+
+    // Last-write-wins on Updated At, and a loser is REPORTED, never dropped in
+    // silence. §6 is explicit that unsaved user work must not disappear without
+    // the person being told, so the response carries the stored timestamp and
+    // the stored record for the client to show as a conflict.
+    if (rowIndex && existing && H['Updated At'] !== undefined) {
+      const storedAt = isoOrEmpty(existing[H['Updated At']]);
+      if (storedAt) {
+        const a = (new Date(incomingAt)).getTime(), b = (new Date(storedAt)).getTime();
+        if (!isNaN(a) && !isNaN(b) && a < b) {
+          const cur = {};
+          Object.keys(H).forEach(function (h) { cur[h] = existing[H[h]]; });
+          return { status: 'ok', ok: true, skipped: 'stale', id: id,
+                   storedAt: storedAt, incomingAt: incomingAt, current: cur,
+                   message: 'A newer version of this record is already saved' };
+        }
+      }
+    }
+
+    // Build the row against the LIVE header positions, preserving any column a
+    // human added to the sheet that this module does not know about.
+    const row = rowIndex && existing ? existing.slice(0, width) : new Array(width).fill('');
+    function put(h, val) { if (H[h] !== undefined) row[H[h]] = val; }
+    put('ID', id);
+    Object.keys(rec).forEach(function (h) { put(h, rec[h]); });
+    (m.derived || []).forEach(function (h) { put(h, rec[h] === undefined ? '' : rec[h]); });
+    if (!rowIndex) {
+      put('Created At', now);
+      put('Created By', auth.name);
+    }
+    put('Updated At', incomingAt);
+    put('Updated By', auth.name);
+
+    if (rowIndex) sheet_setRow(sh, rowIndex, row);
+    else appendRow(sh, row);
+
+    return { status: 'ok', ok: true, id: id, module: key,
+             updatedAt: incomingAt, created: !rowIndex };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// ── Reader ────────────────────────────────────────────────────────────
+// GET: ?action=module&name=<key>&user=<name>&hash=<pinHash>|token=<token>
+//      [&employee=][&store=][&from=yyyy-mm-dd][&to=yyyy-mm-dd][&since=<iso>][&limit=]
+//
+// RBAC is applied to the ROWS, not to the presentation. An out-of-scope row is
+// never placed in the response, so there is nothing for a modified client to
+// reveal. §4's "hiding a card is not sufficient security" applies just as much
+// to a list of records as to a dashboard tile.
+function getModuleEndpoint(ss, key, params) {
+  const m = BE_MODULES[String(key || '').trim()];
+  if (!m) return jsonResp({ status: 'error', message: 'unknown module: ' + (key || '(none)') });
+
+  const auth = beAuth(ss, params.user, params.hash, params.token);
+  if (!auth.ok) return jsonResp({ status: 'error', reason: auth.reason, message: 'not authorised (' + auth.reason + ')' });
+  if (!beScopeAtLeast(auth.scope, m.read)) {
+    return jsonResp({ status: 'error', reason: 'forbidden', message: 'not visible at your access level' });
+  }
+
+  const sh = beModuleSheet(ss, m);
+  if (sh.getLastRow() < 2) {
+    return jsonResp({ status: 'ok', module: key, scope: auth.scope, items: [], count: 0,
+                      serverTime: new Date().toISOString() });
+  }
+  const H = beHeaderMap(sh);
+  const data = sh.getDataRange().getValues();
+
+  const stores = dashStoresFor(auth);
+  const wantStore = String(params.store || '').trim();
+  const wantEmp   = String(params.employee || '').trim();
+  const from = String(params.from || '').trim();
+  const to   = String(params.to || '').trim();
+  let sinceMs = 0;
+  if (params.since) { const _s = (new Date(String(params.since))).getTime(); if (!isNaN(_s)) sinceMs = _s; }
+  const limit = Math.min(2000, Math.max(1, parseInt(params.limit || '500', 10) || 500));
+
+  const out = [];
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+    if (H['ID'] === undefined || !String(r[H['ID']] || '').trim()) continue;
+
+    // ── scope filters, applied before anything is added to the response ──
+    if (m.own && auth.scope === 'member') {
+      if (String(r[H[m.own]] || '').trim() !== String(auth.name).trim()) continue;
+    }
+    if (m.storeField && auth.scope !== 'owner' && H[m.storeField] !== undefined) {
+      const st = String(r[H[m.storeField]] || '').trim();
+      // A blank store means "applies everywhere" — company-wide KRAs and
+      // training modules are legitimately storeless and must stay visible.
+      if (st && stores.indexOf(st) < 0) continue;
+    }
+
+    // ── caller's own filters ──
+    if (wantStore && m.storeField && H[m.storeField] !== undefined &&
+        String(r[H[m.storeField]] || '').trim() !== wantStore) continue;
+    if (wantEmp && m.own && H[m.own] !== undefined &&
+        String(r[H[m.own]] || '').trim() !== wantEmp) continue;
+    if (m.dateField && H[m.dateField] !== undefined && (from || to)) {
+      const ds = dstr(r[H[m.dateField]]);
+      if (from && ds < from) continue;
+      if (to && ds > to) continue;
+    }
+    const updatedAt = H['Updated At'] !== undefined ? isoOrEmpty(r[H['Updated At']]) : '';
+    if (sinceMs && updatedAt && (new Date(updatedAt)).getTime() <= sinceMs) continue;
+
+    const item = {};
+    Object.keys(H).forEach(function (h) {
+      const v = r[H[h]];
+      item[h] = (h === 'Updated At' || h === 'Created At') ? (isoOrEmpty(v) || String(v || ''))
+              : (m.dateField === h ? dstr(v) : v);
+    });
+    out.push(item);
+    if (out.length >= limit) break;
+  }
+
+  return jsonResp({
+    status: 'ok', module: key, scope: auth.scope, user: auth.name,
+    stores: stores, items: out, count: out.length,
+    truncated: out.length >= limit,
+    serverTime: new Date().toISOString()
+  });
+}
+
+// ?action=modules — the registry itself, so the app can build its forms from
+// the server's field definitions instead of hard-coding a second copy that
+// drifts. Returns only what the caller is allowed to see.
+function getModuleRegistryEndpoint(ss, params) {
+  const auth = beAuth(ss, params.user, params.hash, params.token);
+  if (!auth.ok) return jsonResp({ status: 'error', reason: auth.reason, message: 'not authorised (' + auth.reason + ')' });
+  const out = {};
+  Object.keys(BE_MODULES).forEach(function (k) {
+    const m = BE_MODULES[k];
+    if (!beScopeAtLeast(auth.scope, m.read)) return;
+    out[k] = {
+      label: m.label, sheet: m.sheet,
+      canWrite: beScopeAtLeast(auth.scope, m.write),
+      own: m.own || '', dateField: m.dateField || '',
+      fields: m.fields.map(function (f) {
+        return { key: f.k, type: f.t, required: !!f.required,
+                 max: f.max || null, values: f.values || null,
+                 def: f.def === undefined ? null : f.def };
+      }),
+      derived: m.derived || []
+    };
+  });
+  return jsonResp({ status: 'ok', scope: auth.scope, user: auth.name,
+                    modules: out, serverTime: new Date().toISOString() });
+}
+
+// ── Scripted test-data cleanup (§7) ───────────────────────────────────
+// The smoke test writes records whose IDs start with ZZTEST-. This removes
+// exactly those, from the module sheets only, and reports what it removed.
+// It cannot touch a real record because a real ID always starts with the
+// module's own prefix, and it never runs unless the owner key is supplied.
+const BE_TEST_ID_PREFIX = 'ZZTEST-';
+function beCleanupTestRecords(ownerKey) {
+  if (!ownerKey || ownerKey !== OWNER_KEY_HASH) return jsonResp({ status: 'error', message: 'not_authorised' });
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const removed = {};
+  Object.keys(BE_MODULES).forEach(function (k) {
+    const m = BE_MODULES[k];
+    const sh = ss.getSheetByName(m.sheet);
+    if (!sh || sh.getLastRow() < 2) return;
+    const H = beHeaderMap(sh);
+    if (H['ID'] === undefined) return;
+    const n = deleteRowsWhere(sh, function (row) {
+      return String(row[H['ID']] || '').indexOf(BE_TEST_ID_PREFIX) === 0;
+    });
+    if (n) removed[m.sheet] = n;
+  });
+  return jsonResp({ status: 'ok', ok: true, removed: removed });
 }
