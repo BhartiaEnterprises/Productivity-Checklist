@@ -3575,7 +3575,7 @@ function beModuleSheet(ss, m) {
 // Applied once per sheet per format version and remembered in Script
 // Properties, so ordinary reads and writes do not pay for it every call.
 const BE_FMT_PROP_PREFIX = 'BE_TXTFMT_';
-const BE_FMT_VERSION = 'v1';
+const BE_FMT_VERSION = 'v2';
 
 function beTextHeaders(m) {
   // ID and the audit columns are stored as literal strings too — an ID or a
@@ -3608,6 +3608,28 @@ function beApplyTextFormat(sh, m) {
     try { sh.getRange(2, c + 1, rows, 1).setNumberFormat('@'); } catch (e) {}
   });
   try { props.setProperty(key, BE_FMT_VERSION); } catch (e) {}
+}
+
+// The zero-based column indexes of this module's text-typed columns, resolved
+// against the LIVE header map so a human-reordered sheet is still handled.
+function beRowTextCols(m, H, width) {
+  const out = [];
+  beTextHeaders(m).forEach(function (h) {
+    const c = H[h];
+    if (c === undefined) return;
+    if (c < 0 || c >= width) return;
+    if (out.indexOf(c) < 0) out.push(c);
+  });
+  return out;
+}
+
+// Pin exactly one row's text columns to plain text, in the same execution as
+// the write that follows. Unconditional and uncached on purpose: a cached
+// "already formatted" mark is what let the Period defect survive Version 20.
+function beApplyRowTextFormat(sh, rowIndex, textCols) {
+  for (let i = 0; i < textCols.length; i++) {
+    try { sh.getRange(rowIndex, textCols[i] + 1).setNumberFormat('@'); } catch (e) {}
+  }
 }
 
 // Header name → column index, read from the live sheet rather than assumed.
@@ -3801,11 +3823,45 @@ function handleModuleWrite(ss, d, now) {
     put('Updated At', incomingAt);
     put('Updated By', auth.name);
 
-    if (rowIndex) sheet_setRow(sh, rowIndex, row);
-    else appendRow(sh, row);
+    // Resolve an explicit target row so BOTH the insert and the update path go
+    // through one row-addressed write. appendRow() does not reliably honour a
+    // number format that was pre-applied to the destination row, which is how
+    // text values such as Period "2026-07" were being silently re-typed by
+    // Sheets into Dates. Formatting the exact target row in the same execution,
+    // immediately before setValues(), is the behaviour Sheets does guarantee.
+    const targetRow = rowIndex || (sh.getLastRow() + 1);
+    const maxRows = typeof sh.getMaxRows === 'function' ? sh.getMaxRows() : targetRow;
+    if (targetRow > maxRows) {
+      try { sh.insertRowsAfter(maxRows, (targetRow - maxRows) + 10); } catch (e) {}
+    }
+
+    const textCols = beRowTextCols(m, H, width);
+    beApplyRowTextFormat(sh, targetRow, textCols);
+    sheet_setRow(sh, targetRow, row);
+
+    // Self-heal: read the row back and repair any text cell Sheets still
+    // re-typed. This makes the write correct even if the format pass was
+    // rejected, without depending on knowing why.
+    let repaired = 0;
+    try {
+      const back = sh.getRange(targetRow, 1, 1, width).getValues()[0];
+      const bad = [];
+      for (let c = 0; c < textCols.length; c++) {
+        const ci = textCols[c];
+        const want = row[ci];
+        if (typeof want === 'string' && want !== '' && typeof back[ci] !== 'string') bad.push(ci);
+      }
+      for (let c = 0; c < bad.length; c++) {
+        const cell = sh.getRange(targetRow, bad[c] + 1);
+        try { cell.setNumberFormat('@'); } catch (e) {}
+        cell.setValue(row[bad[c]]);
+        repaired++;
+      }
+    } catch (e) {}
 
     return { status: 'ok', ok: true, id: id, module: key,
-             updatedAt: incomingAt, created: !rowIndex };
+             updatedAt: incomingAt, created: !rowIndex,
+             row: targetRow, repaired: repaired };
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
