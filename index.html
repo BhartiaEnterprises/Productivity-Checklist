@@ -2731,7 +2731,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '8.2-phase5-kpi';
+var APP_VERSION = '8.2.1-phase5-kpi';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -9054,6 +9054,15 @@ function perfRenderList(r){
   var h = perfHi();
   var items = (r && r.items) ? r.items : [];
   if(!items.length){
+    if(r && r.err){
+      // A read that was refused or failed is a different fact from a list that
+      // is genuinely empty. Never imply the server holds zero rows when we were
+      // not able to read it at all — the reason is already shown in the status
+      // line above, so point the user at it instead of inventing a count.
+      el.innerHTML = pdEmpty(h ? 'सूची लोड नहीं हो पाई — ऊपर दिया कारण देखें, फिर ↻ ताज़ा करें दबाएँ।'
+                               : 'Could not load the list — see the reason above, then press Refresh.');
+      return;
+    }
     // "nothing recorded yet" is a different fact from "zero" and is said plainly.
     el.innerHTML = pdEmpty(h ? 'अभी तक कोई रिकॉर्ड नहीं — नीचे/ऊपर फ़ॉर्म से पहला जोड़ें।'
                              : 'No records yet — add the first one using the form above.');
