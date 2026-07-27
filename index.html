@@ -1599,6 +1599,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
       <button class="btn" id="prod-sub-bda" onclick="setProdSub('bda')" style="flex:1;font-size:12px">🤝 <span class="hi">BDA</span></button>
       <button class="btn" id="prod-sub-train" onclick="setProdSub('training')" style="flex:1;font-size:12px">🎓 <span class="hi">Training</span></button>
     </div>
+    <!-- §9 PERFORMANCE (KRA / KPI / Goals). Kept on its own row so the label
+         stays legible on a 360px phone instead of squeezing a 5th button in. -->
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button class="btn" id="prod-sub-perf" onclick="setProdSub('performance')" style="flex:1;font-size:12px">🎯 <span class="hi">KRA / KPI / Goals</span></button>
+    </div>
     <!-- TIMESHEET VIEW -->
     <div id="prod-timesheet-view">
     <!-- Toolbar -->
@@ -1776,6 +1781,21 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--dark);min-h
       </div>
       <div id="train-body"></div>
       <button class="btn green" style="width:100%;margin-top:10px" onclick="submitTraining()">✓ <span class="hi">Training पूरा — जमा करें</span></button>
+    </div>
+    <!-- ── §9 PERFORMANCE VIEW: KRA definitions, KPI entries, Goals ──
+         Every row shown here is read from the live 'module' endpoint with the
+         signed-in user's own credentials, so the server decides what is
+         visible. Nothing on this screen is sample or placeholder data. -->
+    <div id="prod-perf-view" style="display:none">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button class="btn" id="perf-seg-kpi"  onclick="perfSetSeg('kpi')"  style="flex:1;font-size:12px">📈 <span class="hi">KPI</span></button>
+        <button class="btn" id="perf-seg-goal" onclick="perfSetSeg('goal')" style="flex:1;font-size:12px">🏁 <span class="hi">Goals</span></button>
+        <button class="btn" id="perf-seg-kra"  onclick="perfSetSeg('kra')"  style="flex:1;font-size:12px">📋 <span class="hi">KRA</span></button>
+      </div>
+      <div id="perf-status" style="font-size:11px;color:var(--light);margin-bottom:8px;line-height:1.45"></div>
+      <div id="perf-conflict"></div>
+      <div id="perf-form"></div>
+      <div id="perf-list"></div>
     </div>
   </div>
 </div>
@@ -2711,7 +2731,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '8.1-backend';
+var APP_VERSION = '8.2-phase5-kpi';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -7294,8 +7314,8 @@ function smeNameKey(){ return 'be_sme_name_'+smeStore()+'_'+smeDate(); }
 function smeLoad(){ try{ return JSON.parse(localStorage.getItem(smeKey())||'{}'); }catch(e){ return {}; } }
 function smeSave(d){ localStorage.setItem(smeKey(), JSON.stringify(d)); }
 function setProdSub(sub){
-  var views={timesheet:'prod-timesheet-view', sme:'prod-sme-view', billing:'prod-billing-view', inventory:'prod-inventory-view', crm:'prod-crm-view', bda:'prod-bda-view', training:'prod-training-view'};
-  var btns ={timesheet:'prod-sub-ts', sme:'prod-sub-sme', billing:'prod-sub-be', inventory:'prod-sub-inv', crm:'prod-sub-crm', bda:'prod-sub-bda', training:'prod-sub-train'};
+  var views={timesheet:'prod-timesheet-view', sme:'prod-sme-view', billing:'prod-billing-view', inventory:'prod-inventory-view', crm:'prod-crm-view', bda:'prod-bda-view', training:'prod-training-view', performance:'prod-perf-view'};
+  var btns ={timesheet:'prod-sub-ts', sme:'prod-sub-sme', billing:'prod-sub-be', inventory:'prod-sub-inv', crm:'prod-sub-crm', bda:'prod-sub-bda', training:'prod-sub-train', performance:'prod-sub-perf'};
   Object.keys(views).forEach(function(k){
     var v=document.getElementById(views[k]); if(v) v.style.display=(k===sub)?'':'none';
     var b=document.getElementById(btns[k]);
@@ -7307,6 +7327,7 @@ function setProdSub(sub){
   if(sub==='crm') renderCRM();
   if(sub==='bda') renderBDA();
   if(sub==='training') renderTraining();
+  if(sub==='performance') renderPerformance();
 }
 function saveSMEName(){
   var n=document.getElementById('sme-name');
@@ -8581,22 +8602,28 @@ function applyProdSubTabScope(){
   if(!CURRENT_USER){ return; }
   var roles=CURRENT_USER.roles||[];
   // Map roles → which sub-tabs they can see
+  // 'performance' (§9 KRA/KPI/Goals) is granted to every role: KPI entries and
+  // Goals are a person's own record of their own work, and the server enforces
+  // row-level ownership on top of this, so seeing the tab never means seeing
+  // somebody else's rows. KRA definitions remain manager/owner-write only.
   var roleSubTabs={
-    'Manager':['timesheet','sme','billing','inventory','crm','bda','training'],
-    'PC':['timesheet','sme','billing','inventory','crm','bda','training'],
-    'Owner':['timesheet','sme','billing','inventory','crm','bda','training'],
-    'Social Media Exec':['sme','training'],
-    'Billing Exec':['billing','training'],
-    'Inventory':['inventory','training'],
-    'CRM':['crm','training'],
-    'BDA':['bda','training'],
-    'Telecaller':['timesheet','training'],
-    'Accountant':['timesheet','training'],
-    'Sales':['training']
+    'Manager':['timesheet','sme','billing','inventory','crm','bda','training','performance'],
+    'PC':['timesheet','sme','billing','inventory','crm','bda','training','performance'],
+    'Owner':['timesheet','sme','billing','inventory','crm','bda','training','performance'],
+    'Social Media Exec':['sme','training','performance'],
+    'Billing Exec':['billing','training','performance'],
+    'Inventory':['inventory','training','performance'],
+    'CRM':['crm','training','performance'],
+    'BDA':['bda','training','performance'],
+    'Telecaller':['timesheet','training','performance'],
+    'Accountant':['timesheet','training','performance'],
+    'Sales':['training','performance']
   };
   var allowed={};
   roles.forEach(function(r){ (roleSubTabs[r]||[]).forEach(function(s){ allowed[s]=true; }); });
-  var btnMap={timesheet:'prod-sub-ts', sme:'prod-sub-sme', billing:'prod-sub-be', inventory:'prod-sub-inv', crm:'prod-sub-crm', bda:'prod-sub-bda', training:'prod-sub-train'};
+  // 'performance' is deliberately LAST so the existing default landing sub-tab
+  // for every role is unchanged by this addition.
+  var btnMap={timesheet:'prod-sub-ts', sme:'prod-sub-sme', billing:'prod-sub-be', inventory:'prod-sub-inv', crm:'prod-sub-crm', bda:'prod-sub-bda', training:'prod-sub-train', performance:'prod-sub-perf'};
   var firstAllowed=null;
   Object.keys(btnMap).forEach(function(k){
     var b=document.getElementById(btnMap[k]);
@@ -8604,6 +8631,758 @@ function applyProdSubTabScope(){
   });
   // Default to the user's first allowed sub-tab (not always timesheet)
   if(firstAllowed) setProdSub(firstAllowed);
+}
+// ══════════════════════════════════════════════════════════════
+// §9 PERFORMANCE — KRA / KPI / GOALS (client side)
+// ══════════════════════════════════════════════════════════════
+// These screens sit on the generic 'module' data layer that already runs in
+// production (Apps Script Version 21): reads go through
+//   GET  ?action=module&name=<key>&user=&hash=
+// and writes go through the ordinary submission pipeline
+//   POST type_=module&module=<key>&rec=<json>&user=&hash=&updatedAt=&id=
+// which means they inherit cid de-duplication, 3x retry, the offline outbox
+// and the §3 sync indicator for free. Nothing here invents a number: every
+// row displayed is a row the server returned for THIS user.
+//
+// The helpers beModRegistry/beModFetch/beModSave/beModVerify are deliberately
+// module-agnostic so §10 Training and §12 Timesheet can be put on the same
+// layer later without a second copy of this plumbing.
+
+var BE_MODREG_KEY   = 'be_modreg_v1';      // cached server field registry
+var BE_MODCACHE_PFX = 'be_modcache_v1_';   // cached rows, per module, per user
+var BE_MOD_STATE    = {};                  // key -> {items, at, loading, err, from}
+
+// Bootstrap field definitions. The server's own registry (?action=modules) is
+// authoritative and overwrites this on every successful load; this copy exists
+// only so the form can still be drawn on a cold start with no network. If the
+// two ever disagree, the server wins — and the server also re-validates every
+// write, so a stale copy here can never push a bad row into a sheet.
+var BE_MOD_FALLBACK = {
+  kra: { label:'KRA Definition', write:'manager', own:null, storeField:'Store', dateField:'',
+    fields:[
+      {key:'Store',       type:'text',     max:20},
+      {key:'Role',        type:'text',     max:80},
+      {key:'Title',       type:'text',     max:200, required:true},
+      {key:'Description', type:'longtext', max:2000},
+      {key:'Weight %',    type:'pct'},
+      {key:'Measure',     type:'text',     max:200},
+      {key:'Target',      type:'num'},
+      {key:'Unit',        type:'text',     max:30},
+      {key:'Frequency',   type:'enum',     values:['daily','weekly','monthly','quarterly','yearly']},
+      {key:'Active',      type:'bool',     def:true}
+    ], derived:[] },
+  kpi: { label:'KPI Entry', write:'member', own:'Employee', storeField:'Store', dateField:'Date',
+    fields:[
+      {key:'Date',     type:'date', required:true},
+      {key:'Store',    type:'text', max:20},
+      {key:'Employee', type:'text', max:80, required:true},
+      {key:'KRA ID',   type:'text', max:40},
+      {key:'KPI',      type:'text', max:200, required:true},
+      {key:'Target',   type:'num'},
+      {key:'Actual',   type:'num'},
+      {key:'Unit',     type:'text', max:30},
+      {key:'Period',   type:'text', max:20},
+      {key:'Note',     type:'longtext', max:1000},
+      {key:'Source',   type:'text', max:40}
+    ], derived:['Achievement %'] },
+  goal: { label:'Goal', write:'member', own:'Employee', storeField:'Store', dateField:'Due Date',
+    fields:[
+      {key:'Store',       type:'text', max:20},
+      {key:'Employee',    type:'text', max:80, required:true},
+      {key:'Title',       type:'text', max:200, required:true},
+      {key:'Description', type:'longtext', max:2000},
+      {key:'Type',        type:'enum', values:['individual','functional','store','company'], def:'individual'},
+      {key:'Period',      type:'text', max:20},
+      {key:'Start Date',  type:'date'},
+      {key:'Due Date',    type:'date'},
+      {key:'Target',      type:'num'},
+      {key:'Unit',        type:'text', max:30},
+      {key:'Progress',    type:'num'},
+      {key:'Status',      type:'enum', values:['not_started','in_progress','at_risk','achieved','missed','cancelled'], def:'not_started'},
+      {key:'Set By',      type:'text', max:80}
+    ], derived:['Progress %'] }
+};
+
+function beModSpec(key){
+  try{
+    var raw = localStorage.getItem(BE_MODREG_KEY);
+    if(raw){
+      var o = JSON.parse(raw);
+      if(o && o.modules && o.modules[key]) return o.modules[key];
+    }
+  }catch(e){}
+  return BE_MOD_FALLBACK[key] || null;
+}
+
+// Pull the server's field registry once per session and cache it. A failure is
+// non-fatal: the bootstrap copy above keeps the screens usable offline.
+function beModRegistry(){
+  return new Promise(function(resolve){
+    if(!CURRENT_USER){ resolve(null); return; }
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){ resolve(null); return; }
+    var url = SCRIPT_URL+'?action=modules'+
+      '&user='+encodeURIComponent(CURRENT_USER.name)+
+      '&hash='+encodeURIComponent(pdPinHash())+
+      '&_ts='+Date.now();
+    var done=false;
+    var timer=setTimeout(function(){ if(!done){ done=true; resolve(null); } }, 20000);
+    fetch(url, {method:'GET', redirect:'follow'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(done) return; done=true; clearTimeout(timer);
+        if(d && d.status==='ok' && d.modules){
+          try{ localStorage.setItem(BE_MODREG_KEY, JSON.stringify({at:Date.now(), modules:d.modules})); }catch(e){}
+          resolve(d.modules);
+        } else { resolve(null); }
+      })
+      .catch(function(){ if(!done){ done=true; clearTimeout(timer); resolve(null); } });
+  });
+}
+
+// ── row cache, bound to the signed-in user ────────────────────────────
+function beModCacheLoad(key){
+  try{
+    var raw = localStorage.getItem(BE_MODCACHE_PFX+key);
+    if(!raw) return null;
+    var o = JSON.parse(raw);
+    if(!o || !CURRENT_USER || o.user !== CURRENT_USER.name) return null;
+    return o;
+  }catch(e){ return null; }
+}
+function beModCacheSave(key, items){
+  try{
+    localStorage.setItem(BE_MODCACHE_PFX+key, JSON.stringify({
+      user: CURRENT_USER ? CURRENT_USER.name : '', at: Date.now(), items: items
+    }));
+  }catch(e){}
+}
+
+// Local-first read. Resolves {items, from:'server'|'cache'|'', at, err}.
+// A network failure never blanks a list that was already on screen.
+function beModFetch(key, params, force){
+  return new Promise(function(resolve){
+    var st = BE_MOD_STATE[key] || (BE_MOD_STATE[key] = {items:null, at:0, loading:false, err:'', from:''});
+    if(!CURRENT_USER){ resolve({items:[], from:'', err:'no_user'}); return; }
+    if(!force && st.items && (Date.now()-st.at) < 45000){
+      resolve({items:st.items, from:st.from, at:st.at, err:''}); return;
+    }
+    if(st.items===null){
+      var c = beModCacheLoad(key);
+      if(c && c.items){ st.items=c.items; st.at=c.at; st.from='cache'; }
+    }
+    if(SCRIPT_URL==='YOUR_GOOGLE_APPS_SCRIPT_URL_HERE'){
+      resolve({items:st.items||[], from:st.from, at:st.at, err:'not_configured'}); return;
+    }
+    if(st.loading){ resolve({items:st.items||[], from:st.from, at:st.at, err:st.err}); return; }
+    st.loading = true;
+    var url = SCRIPT_URL+'?action=module&name='+encodeURIComponent(key)+
+      '&user='+encodeURIComponent(CURRENT_USER.name)+
+      '&hash='+encodeURIComponent(pdPinHash());
+    var p = params || {};
+    var pk = Object.keys(p);
+    for(var i=0;i<pk.length;i++){
+      if(p[pk[i]]===undefined || p[pk[i]]==='') continue;
+      url += '&'+encodeURIComponent(pk[i])+'='+encodeURIComponent(p[pk[i]]);
+    }
+    url += '&_ts='+Date.now();
+    var done=false;
+    var timer=setTimeout(function(){
+      if(done) return; done=true; st.loading=false;
+      st.err = 'timeout';
+      resolve({items:st.items||[], from:st.from, at:st.at, err:'timeout'});
+    }, 20000);
+    fetch(url, {method:'GET', redirect:'follow'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(done) return; done=true; clearTimeout(timer); st.loading=false;
+        if(d && d.status==='ok' && d.items){
+          st.items = d.items; st.at = Date.now(); st.from='server'; st.err='';
+          beModCacheSave(key, d.items);
+          resolve({items:d.items, from:'server', at:st.at, err:'', scope:d.scope, truncated:d.truncated});
+        } else {
+          // A refusal is reported as a refusal. The cached rows stay on screen
+          // rather than the screen going blank.
+          st.err = (d && d.reason) ? d.reason : 'error';
+          resolve({items:st.items||[], from:st.from, at:st.at, err:st.err,
+                   message:(d && d.message) ? d.message : ''});
+        }
+      })
+      .catch(function(){
+        if(done) return; done=true; clearTimeout(timer); st.loading=false;
+        st.err='network';
+        resolve({items:st.items||[], from:st.from, at:st.at, err:'network'});
+      });
+  });
+}
+
+// ── client-side validation, mirroring the server's beValidate ─────────
+// This is a courtesy so the user sees the problem next to the field instead
+// of after a round-trip. The server still validates independently; this is
+// never treated as a substitute for it.
+function beModValidate(spec, rec){
+  var errs = [];
+  for(var i=0;i<spec.fields.length;i++){
+    var f = spec.fields[i];
+    var v = rec[f.key];
+    var s = (v===undefined||v===null) ? '' : String(v).trim();
+    if(f.required && s===''){ errs.push({field:f.key, msg:'required'}); continue; }
+    if(s==='') continue;
+    if((f.type==='text'||f.type==='longtext'||f.type==='ref') && f.max && s.length > f.max){
+      errs.push({field:f.key, msg:'too long (max '+f.max+')'}); continue;
+    }
+    if(f.type==='int' || f.type==='num' || f.type==='pct'){
+      var n = Number(s);
+      if(!isFinite(n)){ errs.push({field:f.key, msg:'must be a number'}); continue; }
+      if(f.type==='int' && Math.floor(n)!==n){ errs.push({field:f.key, msg:'must be a whole number'}); continue; }
+      if(f.type==='pct' && (n<0 || n>100)){ errs.push({field:f.key, msg:'must be between 0 and 100'}); continue; }
+    }
+    if(f.type==='date' && !/^\d{4}-\d{2}-\d{2}$/.test(s)){
+      errs.push({field:f.key, msg:'use YYYY-MM-DD'}); continue;
+    }
+    if(f.type==='time' && !/^\d{1,2}:\d{2}$/.test(s)){
+      errs.push({field:f.key, msg:'use HH:MM'}); continue;
+    }
+    if(f.type==='enum' && f.values && f.values.length && f.values.indexOf(s) < 0){
+      errs.push({field:f.key, msg:'choose one of: '+f.values.join(', ')}); continue;
+    }
+  }
+  return errs;
+}
+
+// Write one record. Returns {status:'confirmed'|'queued'|'unconfirmed'|'conflict',
+// id, diffs}. 'conflict' means the server kept a different version — the caller
+// must SHOW that, never swallow it (§6: do not silently discard unsaved work).
+function beModSave(key, rec, id){
+  var updatedAt = new Date().toISOString();
+  var payload = {
+    type_: 'module',
+    module: key,
+    rec: JSON.stringify(rec),
+    user: CURRENT_USER ? CURRENT_USER.name : '',
+    hash: pdPinHash(),
+    updatedAt: updatedAt
+  };
+  if(id) payload.id = id;
+  return sendToSheets(payload).then(function(res){
+    if(!res.ok) return {status:'queued', id:id||'', diffs:[]};
+    // Read the module back and check the row actually carries what was sent.
+    // 'the POST returned' is not evidence; the stored row is.
+    return beModVerify(key, id, rec, 3).then(function(v){
+      if(!v.found) return {status:'unconfirmed', id:id||'', diffs:[]};
+      if(v.diffs.length) return {status:'conflict', id:v.id, diffs:v.diffs, row:v.row};
+      return {status:'confirmed', id:v.id, diffs:[], row:v.row};
+    });
+  });
+}
+
+// Re-read the module and compare the stored row against what was submitted.
+// When the id is empty (an insert) the newest row whose fields match is used.
+function beModVerify(key, id, rec, tries){
+  return new Promise(function(resolve){
+    var left = tries || 1;
+    function attempt(){
+      left--;
+      beModFetch(key, {limit:200}, true).then(function(r){
+        var items = r.items || [];
+        var row = null, i;
+        if(id){
+          for(i=0;i<items.length;i++){ if(String(items[i].ID||'')===String(id)){ row=items[i]; break; } }
+        } else {
+          // No ID yet: find the most recently updated row that carries the
+          // values just submitted. Matching on content, not on position.
+          for(i=items.length-1;i>=0;i--){
+            if(beModRowMatches(items[i], rec)){ row=items[i]; break; }
+          }
+        }
+        if(!row){
+          if(left>0){ setTimeout(attempt, 2500); return; }
+          resolve({found:false, diffs:[], id:id||'', row:null}); return;
+        }
+        resolve({found:true, id:String(row.ID||id||''), row:row, diffs:beModDiff(row, rec)});
+      });
+    }
+    setTimeout(attempt, 1200);
+  });
+}
+function beModNorm(v){
+  if(v===undefined||v===null) return '';
+  if(v===true) return 'true';
+  if(v===false) return 'false';
+  var s = String(v).trim();
+  if(/^(true|yes|1)$/i.test(s)) return 'true';
+  if(/^(false|no|0)$/i.test(s)) return 'false';
+  var n = Number(s);
+  if(s!=='' && isFinite(n)) return String(n);
+  return s;
+}
+function beModRowMatches(row, rec){
+  var ks = Object.keys(rec), hit = 0;
+  for(var i=0;i<ks.length;i++){
+    if(beModNorm(rec[ks[i]])==='') continue;
+    if(beModNorm(row[ks[i]]) !== beModNorm(rec[ks[i]])) return false;
+    hit++;
+  }
+  return hit > 0;
+}
+function beModDiff(row, rec){
+  var out = [], ks = Object.keys(rec);
+  for(var i=0;i<ks.length;i++){
+    var k = ks[i];
+    if(beModNorm(rec[k])==='' && beModNorm(row[k])==='') continue;
+    if(beModNorm(row[k]) !== beModNorm(rec[k])) out.push({field:k, sent:rec[k], stored:row[k]});
+  }
+  return out;
+}
+
+// ══════════════════════════════════════════════════════════════
+// §9 PERFORMANCE SCREENS
+// ══════════════════════════════════════════════════════════════
+var PERF_SEG   = 'kpi';       // 'kpi' | 'goal' | 'kra'
+var PERF_EDIT  = null;        // id currently being edited, '' = new record
+var PERF_DRAFT = {};          // in-progress form values, kept across renders
+var PERF_MSG   = '';          // last status line (html)
+var PERF_CONFLICT = null;     // {diffs, id} — shown until the user acts on it
+var PERF_BUSY  = false;
+
+function perfHi(){ return lang==='hi'; }
+function perfLevel(){
+  if(!CURRENT_USER) return 'member';
+  return CURRENT_USER.level || getAccessLevel(CURRENT_USER.roles);
+}
+// The server registry answers this directly (canWrite), because it computed it
+// from the caller's own resolved scope. The bootstrap spec only carries the
+// required level, so that path is evaluated locally. Either way the server
+// re-checks on write — this only decides whether a form is worth showing.
+function perfCanWrite(key){
+  var spec = beModSpec(key);
+  if(!spec) return false;
+  if(spec.canWrite !== undefined && spec.canWrite !== null) return !!spec.canWrite;
+  var need = spec.write || 'member';
+  var lvl  = perfLevel();
+  if(need==='owner')   return lvl==='owner';
+  if(need==='manager') return lvl==='owner' || lvl==='manager';
+  return true;
+}
+// The server registry does not send storeField (it is an internal detail), so
+// it is resolved from the field list instead of being assumed.
+function perfStoreField(spec){
+  if(spec.storeField) return spec.storeField;
+  for(var i=0;i<spec.fields.length;i++) if(spec.fields[i].key==='Store') return 'Store';
+  return '';
+}
+function perfSetSeg(seg){
+  PERF_SEG = seg;
+  PERF_EDIT = null; PERF_DRAFT = {}; PERF_MSG = ''; PERF_CONFLICT = null;
+  // Clear the previous segment's rows so one module's records can never be
+  // left on screen under another module's heading while the next load runs.
+  var le = document.getElementById('perf-list'); if(le) le.innerHTML = '';
+  renderPerformance(false);
+}
+function perfSegButtons(){
+  var map = {kpi:'perf-seg-kpi', goal:'perf-seg-goal', kra:'perf-seg-kra'};
+  Object.keys(map).forEach(function(k){
+    var b = document.getElementById(map[k]);
+    if(!b) return;
+    var on = (k===PERF_SEG);
+    b.style.background  = on ? 'var(--dark)' : '#fff';
+    b.style.color       = on ? '#fff' : 'var(--dark)';
+    b.style.borderColor = on ? 'var(--dark)' : 'var(--border)';
+  });
+}
+
+function renderPerformance(force){
+  perfSegButtons();
+  var listEl = document.getElementById('perf-list');
+  if(!CURRENT_USER){
+    if(listEl) listEl.innerHTML = pdEmpty(perfHi()?'पहले login करें':'Please log in first');
+    perfRenderForm(); perfRenderStatus('');
+    return;
+  }
+  perfRenderForm();
+  perfRenderConflict();
+  if(listEl && !listEl.innerHTML){
+    listEl.innerHTML = pdEmpty(perfHi()?'लोड हो रहा है…':'Loading…');
+  }
+  // The server registry is fetched once; a failure leaves the bootstrap spec
+  // in place and is not surfaced as an error, because nothing is broken.
+  try{
+    if(!localStorage.getItem(BE_MODREG_KEY)){
+      beModRegistry().then(function(m){ if(m){ perfRenderForm(); } });
+    }
+  }catch(e){}
+  var params = {limit:200};
+  beModFetch(PERF_SEG, params, force ? true : false).then(function(r){
+    perfRenderList(r);
+    perfRenderStatus(r);
+  });
+}
+
+function perfRenderStatus(r){
+  var el = document.getElementById('perf-status');
+  if(!el) return;
+  var h = perfHi(), bits = [];
+  if(PERF_MSG) bits.push(PERF_MSG);
+  if(r && r.err){
+    if(r.err==='timeout' || r.err==='network'){
+      bits.push('<span style="color:#b45309">'+(h?'सर्वर से जुड़ नहीं पाए — नीचे पिछली सहेजी हुई सूची दिख रही है':'Could not reach the server — showing the last saved list below')+'</span>');
+    } else if(r.err==='not_configured'){
+      bits.push('<span style="color:#b45309">'+(h?'सर्वर URL सेट नहीं है':'Server URL is not configured')+'</span>');
+    } else {
+      bits.push('<span style="color:#b91c1c">'+pdEsc(pdReasonMsg(r.err))+'</span>');
+    }
+  }
+  if(r && r.from==='cache' && r.at){
+    bits.push('<span style="color:var(--light)">'+(h?'पिछली बार अपडेट: ':'Last updated: ')+perfAgo(r.at)+'</span>');
+  }
+  if(r && r.truncated){
+    bits.push('<span style="color:#b45309">'+(h?'सूची बड़ी है — केवल पहले 200 रिकॉर्ड दिखाए गए':'List is long — only the first 200 records are shown')+'</span>');
+  }
+  bits.push('<a href="javascript:void(0)" onclick="renderPerformance(true)" style="color:var(--gold);font-weight:700;text-decoration:none">'+(h?'↻ ताज़ा करें':'↻ Refresh')+'</a>');
+  el.innerHTML = bits.join(' &nbsp;·&nbsp; ');
+}
+function perfAgo(ms){
+  var s = Math.max(0, Math.round((Date.now()-ms)/1000));
+  if(s < 60) return s+'s';
+  if(s < 3600) return Math.round(s/60)+'m';
+  return Math.round(s/3600)+'h';
+}
+
+// ── the list ──────────────────────────────────────────────────────────
+function perfRenderList(r){
+  var el = document.getElementById('perf-list');
+  if(!el) return;
+  var h = perfHi();
+  var items = (r && r.items) ? r.items : [];
+  if(!items.length){
+    // "nothing recorded yet" is a different fact from "zero" and is said plainly.
+    el.innerHTML = pdEmpty(h ? 'अभी तक कोई रिकॉर्ड नहीं — नीचे/ऊपर फ़ॉर्म से पहला जोड़ें।'
+                             : 'No records yet — add the first one using the form above.');
+    return;
+  }
+  var out = [], i;
+  // Newest first, using the audit column the server maintains.
+  var sorted = items.slice().sort(function(a,b){
+    return String(b['Updated At']||'').localeCompare(String(a['Updated At']||''));
+  });
+  for(i=0;i<sorted.length;i++) out.push(perfCard(sorted[i]));
+  el.innerHTML = '<div style="font-size:11px;color:var(--light);margin:4px 0 6px">'+
+    pdEsc((h?'कुल ':'Total ')+sorted.length)+'</div>' + out.join('');
+}
+
+function perfCard(row){
+  var h = perfHi();
+  var id = String(row.ID||'');
+  var head, sub, stats = [];
+  if(PERF_SEG==='kpi'){
+    head = row['KPI'] || '(untitled)';
+    sub  = [row['Date']||'', row['Employee']||'', row['Store']||''].filter(function(x){return x;}).join(' · ');
+    stats.push(pdStat(h?'लक्ष्य':'Target', perfNumTxt(row['Target']), 'flat'));
+    stats.push(pdStat(h?'वास्तविक':'Actual', perfNumTxt(row['Actual']), 'flat'));
+    stats.push(pdStat(h?'उपलब्धि':'Achieved', perfPctTxt(row['Achievement %']), perfTone(row['Achievement %'])));
+  } else if(PERF_SEG==='goal'){
+    head = row['Title'] || '(untitled)';
+    sub  = [row['Employee']||'', row['Type']||'', row['Due Date']||''].filter(function(x){return x;}).join(' · ');
+    stats.push(pdStat(h?'लक्ष्य':'Target', perfNumTxt(row['Target']), 'flat'));
+    stats.push(pdStat(h?'प्रगति':'Progress', perfNumTxt(row['Progress']), 'flat'));
+    stats.push(pdStat('%', perfPctTxt(row['Progress %']), perfTone(row['Progress %'])));
+  } else {
+    head = row['Title'] || '(untitled)';
+    sub  = [row['Role']||'', row['Store']||'', row['Frequency']||''].filter(function(x){return x;}).join(' · ');
+    stats.push(pdStat(h?'भार %':'Weight %', perfNumTxt(row['Weight %']), 'flat'));
+    stats.push(pdStat(h?'लक्ष्य':'Target', perfNumTxt(row['Target']), 'flat'));
+    stats.push(pdStat(h?'सक्रिय':'Active', perfBoolTxt(row['Active']), perfBoolTxt(row['Active'])==='✓' ? 'ok' : 'flat'));
+  }
+  var extra = '';
+  if(PERF_SEG==='goal' && row['Status']) extra += pdRow(h?'स्थिति':'Status', String(row['Status']));
+  if(row['Unit'])   extra += pdRow(h?'इकाई':'Unit', String(row['Unit']));
+  if(row['Period']) extra += pdRow(h?'अवधि':'Period', String(row['Period']));
+  if(row['Note'])   extra += pdRow(h?'टिप्पणी':'Note', String(row['Note']));
+  if(row['Description']) extra += pdRow(h?'विवरण':'Details', String(row['Description']));
+
+  var canEdit = perfCanWrite(PERF_SEG) && perfOwnsRow(row);
+  var btn = canEdit
+    ? '<button class="btn" style="margin-top:8px;font-size:11.5px;padding:7px 12px" onclick="perfEdit(\'' + pdEsc(id).replace(/'/g,'') + '\')">✏️ '+(h?'बदलें':'Edit')+'</button>'
+    : '';
+  return '<div class="card" style="margin-bottom:10px">'+
+    '<div class="card-title">'+pdEsc(head)+'</div>'+
+    (sub ? '<div style="font-size:10px;color:var(--light);margin:-4px 0 8px">'+pdEsc(sub)+'</div>' : '')+
+    pdStatRow(stats)+
+    (extra ? '<div style="margin-top:8px">'+extra+'</div>' : '')+
+    '<div style="font-size:9.5px;color:var(--light);margin-top:8px">'+pdEsc(id)+'</div>'+
+    btn+'</div>';
+}
+function perfNumTxt(v){
+  if(v===undefined||v===null||String(v).trim()==='') return '—';
+  var n = Number(v); return isFinite(n) ? String(n) : String(v);
+}
+function perfPctTxt(v){
+  if(v===undefined||v===null||String(v).trim()==='') return '—';
+  var n = Number(v); return isFinite(n) ? (n+'%') : String(v);
+}
+function perfBoolTxt(v){
+  var s = beModNorm(v);
+  if(s==='true') return '✓';
+  if(s==='false') return '✗';
+  return '—';
+}
+function perfTone(v){
+  var n = Number(v);
+  if(!isFinite(n) || String(v).trim()==='') return 'flat';
+  if(n >= 100) return 'ok';
+  if(n >= 80)  return 'warn';
+  return 'bad';
+}
+// A member may only edit rows that are their own; managers and owners may edit
+// anything the server let them see. This mirrors the server rule rather than
+// replacing it — the server refuses the write regardless of what is shown here.
+function perfOwnsRow(row){
+  var spec = beModSpec(PERF_SEG);
+  if(!spec || !spec.own) return true;
+  var lvl = perfLevel();
+  if(lvl==='owner' || lvl==='manager') return true;
+  if(!CURRENT_USER) return false;
+  return sameUser(row[spec.own], CURRENT_USER.name);
+}
+
+// ── the form ──────────────────────────────────────────────────────────
+function perfDefaultStore(){
+  if(!CURRENT_USER) return '';
+  var s = CURRENT_USER.store || '';
+  return (s==='BC' || s==='VKS') ? s : '';
+}
+function perfRenderForm(){
+  var el = document.getElementById('perf-form');
+  if(!el) return;
+  var h = perfHi();
+  var spec = beModSpec(PERF_SEG);
+  if(!spec){ el.innerHTML=''; return; }
+  if(!perfCanWrite(PERF_SEG)){
+    el.innerHTML = '<div class="card" style="margin-bottom:10px">'+
+      pdEmpty(h ? (spec.label+' केवल Manager/Owner ही जोड़ सकते हैं — आप इन्हें देख सकते हैं।')
+                : (spec.label+' can only be added by a Manager or Owner — you can view them here.'))+
+      '</div>';
+    return;
+  }
+  if(PERF_EDIT===null){
+    el.innerHTML = '<button class="btn green" style="width:100%;margin-bottom:10px" onclick="perfNew()">➕ '+
+      pdEsc((h?'नया ':'New ')+spec.label)+'</button>';
+    return;
+  }
+  var rows = [], i;
+  for(i=0;i<spec.fields.length;i++){
+    var f = spec.fields[i];
+    if(perfFieldHidden(spec, f)) continue;
+    rows.push(perfField(spec, f));
+  }
+  var der = spec.derived || [];
+  var derHtml = '';
+  if(der.length){
+    derHtml = '<div style="font-size:10.5px;color:var(--light);margin-top:6px">'+
+      pdEsc((h?'सर्वर खुद निकालता है: ':'Calculated by the server: ')+der.join(', '))+'</div>';
+  }
+  el.innerHTML = '<div class="card" style="margin-bottom:10px">'+
+    '<div class="card-title">'+pdEsc((PERF_EDIT ? (h?'बदलें — ':'Edit — ') : (h?'नया — ':'New — '))+spec.label)+'</div>'+
+    (PERF_EDIT ? '<div style="font-size:9.5px;color:var(--light);margin:-4px 0 8px">'+pdEsc(PERF_EDIT)+'</div>' : '')+
+    rows.join('')+derHtml+
+    '<div id="perf-form-err" style="font-size:11.5px;color:#b91c1c;margin-top:8px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px">'+
+      '<button class="btn" style="flex:1" onclick="perfCancel()">'+(h?'रद्द करें':'Cancel')+'</button>'+
+      '<button class="btn green" id="perf-save-btn" style="flex:2" onclick="perfSave()">✓ '+(h?'सहेजें':'Save')+'</button>'+
+    '</div></div>';
+}
+// A member never types their own name or store — the app fills them in and the
+// server enforces them anyway. Managers and owners may set them explicitly.
+function perfFieldHidden(spec, f){
+  var lvl = perfLevel();
+  if(spec.own && f.key===spec.own && lvl==='member') return true;
+  if(f.key==='Source') return true;   // stamped by the app, not by the user
+  return false;
+}
+function perfVal(f){
+  if(PERF_DRAFT.hasOwnProperty(f.key)) return PERF_DRAFT[f.key];
+  if(f.def!==undefined && f.def!==null) return f.def;
+  return '';
+}
+function perfField(spec, f){
+  var h = perfHi();
+  var id = 'perf-f-'+f.key.replace(/[^A-Za-z0-9]/g, '_');
+  var v  = perfVal(f);
+  var lbl = '<label style="font-size:10px;color:var(--light);display:block;margin-bottom:3px">'+
+    pdEsc(f.key)+(f.required?' <span style="color:#b91c1c">*</span>':'')+'</label>';
+  var css = 'padding:8px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;outline:none;width:100%;background:#fff;box-sizing:border-box';
+  var input;
+  if(f.type==='longtext'){
+    input = '<textarea id="'+id+'" rows="3" style="'+css+'" oninput="perfDraft(\''+f.key.replace(/'/g,"\\'")+'\', this.value)">'+pdEsc(v)+'</textarea>';
+  } else if(f.type==='enum'){
+    var opts = ['<option value="">'+(h?'— चुनें —':'— select —')+'</option>'];
+    var vals = f.values || [];
+    for(var i=0;i<vals.length;i++){
+      opts.push('<option value="'+pdEsc(vals[i])+'"'+(beModNorm(vals[i])===beModNorm(v)?' selected':'')+'>'+pdEsc(vals[i])+'</option>');
+    }
+    input = '<select id="'+id+'" style="'+css+'" onchange="perfDraft(\''+f.key.replace(/'/g,"\\'")+'\', this.value)">'+opts.join('')+'</select>';
+  } else if(f.type==='bool'){
+    var on = beModNorm(v)==='true';
+    input = '<select id="'+id+'" style="'+css+'" onchange="perfDraft(\''+f.key.replace(/'/g,"\\'")+'\', this.value)">'+
+      '<option value="true"'+(on?' selected':'')+'>'+(h?'हाँ':'Yes')+'</option>'+
+      '<option value="false"'+(on?'':' selected')+'>'+(h?'नहीं':'No')+'</option></select>';
+  } else {
+    var t = (f.type==='date') ? 'date' : (f.type==='time') ? 'time'
+          : (f.type==='num'||f.type==='int'||f.type==='pct') ? 'number' : 'text';
+    var step = (f.type==='int') ? ' step="1"' : (f.type==='num'||f.type==='pct') ? ' step="any"' : '';
+    var rng  = (f.type==='pct') ? ' min="0" max="100"' : '';
+    var mx   = f.max ? ' maxlength="'+f.max+'"' : '';
+    input = '<input type="'+t+'" id="'+id+'"'+step+rng+mx+' value="'+pdEsc(v)+'" style="'+css+'" oninput="perfDraft(\''+f.key.replace(/'/g,"\\'")+'\', this.value)">';
+  }
+  return '<div style="margin-bottom:9px">'+lbl+input+'</div>';
+}
+function perfDraft(key, val){ PERF_DRAFT[key] = val; }
+
+function perfNew(){
+  var h = perfHi();
+  PERF_EDIT = ''; PERF_CONFLICT = null; PERF_MSG = '';
+  PERF_DRAFT = {};
+  var spec = beModSpec(PERF_SEG);
+  if(spec){
+    for(var i=0;i<spec.fields.length;i++){
+      var f = spec.fields[i];
+      if(f.def!==undefined && f.def!==null) PERF_DRAFT[f.key] = f.def;
+    }
+    if(spec.own && CURRENT_USER) PERF_DRAFT[spec.own] = CURRENT_USER.name;
+    var sf = perfStoreField(spec);
+    if(sf && !PERF_DRAFT[sf]) PERF_DRAFT[sf] = perfDefaultStore();
+    if(spec.dateField && !PERF_DRAFT[spec.dateField]) PERF_DRAFT[spec.dateField] = todayStr2();
+  }
+  perfRenderForm(); perfRenderConflict(); perfRenderStatus('');
+}
+function perfEdit(id){
+  var st = BE_MOD_STATE[PERF_SEG];
+  var items = (st && st.items) ? st.items : [];
+  var row = null;
+  for(var i=0;i<items.length;i++){ if(String(items[i].ID||'')===String(id)){ row=items[i]; break; } }
+  if(!row) return;
+  PERF_EDIT = String(id); PERF_CONFLICT = null; PERF_MSG = '';
+  PERF_DRAFT = {};
+  var spec = beModSpec(PERF_SEG);
+  if(spec){
+    for(var j=0;j<spec.fields.length;j++){
+      var k = spec.fields[j].key;
+      PERF_DRAFT[k] = (row[k]===undefined||row[k]===null) ? '' : String(row[k]);
+    }
+  }
+  perfRenderForm(); perfRenderConflict(); perfRenderStatus('');
+  try{ document.getElementById('perf-form').scrollIntoView(); }catch(e){}
+}
+function perfCancel(){
+  PERF_EDIT = null; PERF_DRAFT = {}; PERF_MSG = ''; PERF_CONFLICT = null;
+  perfRenderForm(); perfRenderConflict(); perfRenderStatus('');
+}
+
+function perfSave(){
+  if(PERF_BUSY) return;
+  var h = perfHi();
+  var spec = beModSpec(PERF_SEG);
+  if(!spec) return;
+  var rec = {}, i;
+  for(i=0;i<spec.fields.length;i++){
+    var f = spec.fields[i];
+    var v = PERF_DRAFT.hasOwnProperty(f.key) ? PERF_DRAFT[f.key] : (f.def!==undefined?f.def:'');
+    rec[f.key] = (v===undefined||v===null) ? '' : v;
+  }
+  // Ownership and store are set by the app for a member, never typed.
+  if(spec.own && perfLevel()==='member' && CURRENT_USER) rec[spec.own] = CURRENT_USER.name;
+  if(spec.own && !String(rec[spec.own]||'').trim() && CURRENT_USER) rec[spec.own] = CURRENT_USER.name;
+  var sfld = perfStoreField(spec);
+  if(sfld && !String(rec[sfld]||'').trim()) rec[sfld] = perfDefaultStore();
+  var hasSource = false;
+  for(i=0;i<spec.fields.length;i++) if(spec.fields[i].key==='Source') hasSource = true;
+  if(hasSource) rec['Source'] = 'app';
+
+  var errs = beModValidate(spec, rec);
+  var errEl = document.getElementById('perf-form-err');
+  if(errs.length){
+    var lines = [];
+    for(i=0;i<errs.length;i++) lines.push(pdEsc(errs[i].field)+': '+pdEsc(errs[i].msg));
+    if(errEl) errEl.innerHTML = lines.join('<br>');
+    return;
+  }
+  if(errEl) errEl.innerHTML = '';
+
+  PERF_BUSY = true;
+  var btn = document.getElementById('perf-save-btn');
+  if(btn){ btn.disabled = true; btn.textContent = h?'सहेजा जा रहा है…':'Saving…'; }
+  PERF_MSG = '<span style="color:var(--light)">'+(h?'सहेजा जा रहा है…':'Saving…')+'</span>';
+  perfRenderStatus('');
+
+  beModSave(PERF_SEG, rec, PERF_EDIT || '').then(function(res){
+    PERF_BUSY = false;
+    if(res.status==='confirmed'){
+      PERF_MSG = '<span style="color:var(--green);font-weight:700">✅ '+
+        (h?'Google Sheets में confirmed saved':'Confirmed saved to Google Sheets')+'</span>';
+      PERF_EDIT = null; PERF_DRAFT = {}; PERF_CONFLICT = null;
+    } else if(res.status==='queued'){
+      PERF_MSG = '<span style="color:#b45309;font-weight:700">📥 '+
+        (h?'Local save हुआ — नेटवर्क आते ही अपने आप sync होगा':'Saved locally — it will sync automatically when the network returns')+'</span>';
+      PERF_EDIT = null; PERF_DRAFT = {}; PERF_CONFLICT = null;
+    } else if(res.status==='conflict'){
+      // The server kept a different version. The user's own entry is left in
+      // the form so nothing they typed is thrown away, and the difference is
+      // shown field by field so they can decide.
+      PERF_CONFLICT = {id:res.id, diffs:res.diffs};
+      PERF_MSG = '<span style="color:#b45309;font-weight:700">⚠️ '+
+        (h?'सर्वर पर इसका नया संस्करण पहले से है':'A newer version of this record is already on the server')+'</span>';
+    } else {
+      PERF_MSG = '<span style="color:#b45309;font-weight:700">📥 '+
+        (h?'भेज दिया गया, पर सर्वर से पुष्टि नहीं मिली — यह कतार में है और दोबारा भेजा जाएगा':'Sent, but the server has not confirmed it yet — it is queued and will be retried')+'</span>';
+      PERF_EDIT = null; PERF_DRAFT = {}; PERF_CONFLICT = null;
+    }
+    perfRenderForm(); perfRenderConflict();
+    beModFetch(PERF_SEG, {limit:200}, true).then(function(r){
+      perfRenderList(r); perfRenderStatus(r);
+    });
+  })['catch'](function(){
+    PERF_BUSY = false;
+    var btn2 = document.getElementById('perf-save-btn');
+    if(btn2){ btn2.disabled = false; btn2.textContent = '✓ '+(perfHi()?'सहेजें':'Save'); }
+    PERF_MSG = '<span style="color:#b91c1c;font-weight:700">'+
+      (perfHi()?'सहेजने में दिक्कत आई — दोबारा कोशिश करें':'Something went wrong while saving — please try again')+'</span>';
+    perfRenderStatus('');
+  });
+}
+
+function perfRenderConflict(){
+  var el = document.getElementById('perf-conflict');
+  if(!el) return;
+  if(!PERF_CONFLICT){ el.innerHTML=''; return; }
+  var h = perfHi();
+  var rows = [], d = PERF_CONFLICT.diffs || [];
+  for(var i=0;i<d.length;i++){
+    rows.push('<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">'+
+      '<div style="font-weight:700">'+pdEsc(d[i].field)+'</div>'+
+      '<div style="color:#b91c1c">'+pdEsc((h?'आपने भेजा: ':'You sent: ')+d[i].sent)+'</div>'+
+      '<div style="color:#166534">'+pdEsc((h?'सर्वर पर है: ':'Server has: ')+d[i].stored)+'</div>'+
+      '</div>');
+  }
+  el.innerHTML = '<div class="card" style="margin-bottom:10px;border-color:#b45309">'+
+    '<div class="card-title">⚠️ '+(h?'टकराव — आपकी entry सहेजी नहीं गई':'Conflict — your entry was not saved')+'</div>'+
+    '<div style="font-size:11.5px;color:var(--light);margin-bottom:8px">'+
+      (h?'किसी और ने (या किसी और डिवाइस ने) यह रिकॉर्ड आपके बाद बदला है। आपकी टाइप की हुई जानकारी फ़ॉर्म में सुरक्षित है — देखकर तय करें।'
+        :'Someone else (or another device) changed this record after you. What you typed is still safe in the form — compare and decide.')+
+    '</div>'+ rows.join('') +
+    '<div style="display:flex;gap:8px;margin-top:10px">'+
+      '<button class="btn" style="flex:1" onclick="perfConflictKeepServer()">'+(h?'सर्वर वाला रखें':'Keep server version')+'</button>'+
+      '<button class="btn green" style="flex:1" onclick="perfConflictRetry()">'+(h?'मेरा दोबारा भेजें':'Send mine again')+'</button>'+
+    '</div></div>';
+}
+function perfConflictKeepServer(){
+  PERF_CONFLICT = null; PERF_EDIT = null; PERF_DRAFT = {};
+  PERF_MSG = '';
+  perfRenderForm(); perfRenderConflict();
+  renderPerformance(true);
+}
+function perfConflictRetry(){
+  PERF_CONFLICT = null;
+  perfRenderConflict();
+  perfSave();
 }
 // ══════════════════════════════════════════════════════════════
 // POINTS SYSTEM v2 — config, redemption, leaderboard
