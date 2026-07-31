@@ -2463,6 +2463,30 @@ function buildClReview(){
     ${lang==='hi'?'✅ जमा करने पर यह डेटा Google Sheets में सहेजा जाएगा।':'✅ On submission, data will be saved to Google Sheets.'}
   </div>`;
 }
+// Bug #14: elapsed-time feedback so a slow network shows progress instead of a
+// bare spinner. postWithRetry can legitimately take ~65s before the outbox
+// takes over; a silent spinner reads as "the app is broken" and users force-quit
+// mid-submit, which is how work got lost.
+function clStartSubmitProgress(){
+  var el=document.getElementById('cl-loading');
+  if(!el) return null;
+  var msg=el.querySelector('.hi');
+  if(!msg) return null;
+  var t0=Date.now();
+  return setInterval(function(){
+    var s=Math.round((Date.now()-t0)/1000);
+    var base=(lang==='hi'?'जमा हो रहा है...':'Submitting...');
+    var extra='';
+    if(s>=10) extra=(lang==='hi'?' नेटवर्क धीमा है, रुकें':' network is slow, please wait');
+    if(s>=35) extra=(lang==='hi'?' कनेक्शन कमजोर — डेटा सुरक्षित रहेगा':' weak connection — your data will be saved');
+    msg.textContent=base+' ('+s+'s)'+extra;
+  },1000);
+}
+function clStopSubmitProgress(id){
+  if(id) clearInterval(id);
+  var el=document.getElementById('cl-loading');
+  if(el){ var msg=el.querySelector('.hi'); if(msg) msg.textContent=(lang==='hi'?'जमा हो रहा है...':'Submitting...'); }
+}
 async function clSubmit(){
   // Duplicate-submit guard — set BEFORE validation (which now awaits a modal)
   // so a rapid double-tap on Android cannot race in during that wait.
@@ -2470,14 +2494,27 @@ async function clSubmit(){
   _inflightForms['checklist']=true;
   const _submitBtn = document.getElementById('cl-submit-btn');
   if(_submitBtn){ _submitBtn.disabled=true; _submitBtn.style.opacity='0.55'; }
+  // Bug #14: the guard and the disabled button MUST be released on every exit
+  // path, including an unexpected throw. Previously validation ran outside any
+  // try/finally, so one exception bricked the Submit button until a full page
+  // reload. This wrapper makes that class of failure impossible.
+  try{
+    await clSubmitInner(_submitBtn);
+  }catch(err){
+    try{ beDiag('submit-checklist-error', {store: clState.store, type: clState.type, err: String(err && err.message || err)}); }catch(_e){}
+    try{ var _ld=document.getElementById('cl-loading'); if(_ld) _ld.style.display='none'; }catch(_e){}
+    try{ var _s4=document.getElementById('cl-s4'); if(_s4) _s4.style.display=''; }catch(_e){}
+    try{ toast(lang==='hi'?'❌ जमा नहीं हुआ — दोबारा "जमा करें" दबाएं':'❌ Submit failed — press Submit again'); }catch(_e){}
+  }finally{
+    _inflightForms['checklist']=false;
+    if(_submitBtn){ _submitBtn.disabled=false; _submitBtn.style.opacity=''; }
+  }
+}
+async function clSubmitInner(_submitBtn){
   beDiag('submit-checklist-tap', {store: clState.store, type: clState.type});
   // Validate before submit
   const _valid = await validateBeforeSubmit();
-  if(!_valid){
-    _inflightForms['checklist']=false;
-    if(_submitBtn){ _submitBtn.disabled=false; _submitBtn.style.opacity=''; }
-    return;
-  }
+  if(!_valid) return;
   const mgr=document.getElementById('cl-manager')?.value||'';
   const date=document.getElementById('cl-date')?.value||'';
   const time=document.getElementById('cl-time')?.value||'';
@@ -2494,8 +2531,18 @@ async function clSubmit(){
     isEdit:clState.editMode?'1':'0'};
   var _clResult;
   beDiag('submit-checklist-posting', {store: clState.store, type: clState.type});
+  var _clTick = clStartSubmitProgress();
   try{ _clResult = await submitAndVerify(payload); }
+  catch(err){
+    // Bug #14: never lose the user's work. If the transport itself throws,
+    // queue the payload locally (local-first) and report it honestly as
+    // "queued" rather than "Synced".
+    try{ outboxAdd(payload); }catch(_e){}
+    try{ beDiag('submit-checklist-post-error', {store: clState.store, type: clState.type, err: String(err && err.message || err)}); }catch(_e){}
+    _clResult = {status:'queued', cid:payload.cid};
+  }
   finally{
+    clStopSubmitProgress(_clTick);
     _inflightForms['checklist']=false;
     if(_submitBtn){ _submitBtn.disabled=false; _submitBtn.style.opacity=''; }
   }
@@ -2760,7 +2807,7 @@ function getDemoReports(){
 // duplicate guard + 3x retry with backoff + 20s timeout
 // + offline queue with auto-sync + read-back verification
 // ══════════════════════════════════════════════════════
-var APP_VERSION = '8.3.0-phase5-train-ts';
+var APP_VERSION = '8.3.1-bug14-closing-submit';
 var OUTBOX_KEY = 'be_outbox_v1';
 var _inflightForms = {};
 function genCid(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -3378,13 +3425,27 @@ function getBlankLog(){ try{return JSON.parse(localStorage.getItem(BLANK_LOG_KEY
 function saveBlankLog(d){ localStorage.setItem(BLANK_LOG_KEY, JSON.stringify(d)); }
 // Check if task has been blank for 3+ consecutive days
 function checkTaskBlankAlert(){
+  // ── Bug #14 root-cause fix ────────────────────────────────────────────
+  // clState.staffTasks is populated ONLY by buildStaffSection(), which runs
+  // in the OPENING branch of the checklist. On a CLOSING checklist opened
+  // without an opening in the same session, clState.staffTasks is undefined
+  // and `clState.staffTasks[nm]` threw a TypeError. That throw escaped
+  // validateBeforeSubmit() -> clSubmit() before the guard-release block,
+  // leaving _inflightForms['checklist']===true and the Submit button
+  // disabled forever (every later tap hit the early `return`). Users saw
+  // "cannot submit the closing sheet" until a full app reload.
+  // Correct behaviour: when staff tasks were never collected by this form,
+  // there is nothing to judge — return no alerts. Do NOT default to {},
+  // which would raise false "blank task" alerts on every closing submit.
+  const _staffTasks = clState.staffTasks;
+  if(!_staffTasks || typeof _staffTasks!=='object') return [];
   const log  = getBlankLog();
   const today = todayStr2();
   const alerts = [];
   const store = clState.store||'BC';
   const team  = TEAMS[store]||[];
   team.forEach(nm=>{
-    const tasks = clState.staffTasks[nm]||[];
+    const tasks = _staffTasks[nm]||[];
     const hasTask = tasks.some(t=>t.desc&&t.desc.trim());
     const key = `task_${store}_${nm}`;
     if(!hasTask){
@@ -3480,8 +3541,16 @@ function beDiag(tag, data){
 }
 // Validate checklist before submission
 async function validateBeforeSubmit(){
-  // Check task blank alerts
-  const blankAlerts = checkTaskBlankAlert();
+  // Check task blank alerts.
+  // Bug #14 defence-in-depth: a defect inside an ADVISORY check must never be
+  // able to block a real submission. If it throws, log it and let the submit
+  // continue rather than failing the user's whole closing sheet.
+  var blankAlerts = [];
+  try{ blankAlerts = checkTaskBlankAlert() || []; }
+  catch(e){
+    try{ beDiag('validate-blankalert-error', {store: clState.store, type: clState.type, err: String(e && e.message || e)}); }catch(_e){}
+    blankAlerts = [];
+  }
   beDiag('validate-checklist', {store: clState.store, type: clState.type, blankAlerts: blankAlerts});
   if(blankAlerts.length>0){
     const names = blankAlerts.join(', ');
