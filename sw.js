@@ -10,7 +10,7 @@
 // CACHE_VERSION embeds the frontend version. Bumping APP_VERSION in
 // index.html and updating this string together is what lets activate()
 // safely delete every older cache instead of accumulating them forever.
-var CACHE_VERSION = 'be-shell-v8.3.0-phase5-train-ts';
+var CACHE_VERSION = 'be-shell-v8.3.1-bug14-closing-submit';
 
 // Only the static shell — never an API response — goes in this cache.
 var SHELL_URLS = ['./', './index.html'];
